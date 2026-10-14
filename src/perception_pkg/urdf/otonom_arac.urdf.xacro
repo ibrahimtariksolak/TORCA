@@ -41,6 +41,14 @@
        teker_yaricap kadar yuksektedir. Yerden istenen yukseklige
        ulasmak icin aradaki fark dusulur. -->
   <xacro:property name="kamera_yer_yuk" value="1.30"/>
+  <!-- Kamera kaputun ONUNDE olmak zorunda. 0.60 m'de (on cam hizasi)
+       iken govdenin on ust kosesi (x=2.0, z=0.98) goruntude v=288
+       satirina dusuyor ve altindaki 192 satiri (karenin %40'i)
+       kaputla dolduruyordu; yolun ilk 6.4 m'si kor kaliyordu.
+       Kamerayi yerinde tutup kaputu FOV disina cikarmak icin kaputun
+       0.20 m'ye inmesi gerekirdi. Bunun yerine kamera on tampona
+       alindi; gorus artik 3.6 m'den basliyor. -->
+  <xacro:property name="kamera_ileri"   value="1.95"/>
   <!-- LiDAR tampon hizasinda (tavanda degil). Tavanda 1.60 m'ye
        konuldugunda yatay tarama 0.80 m'lik yol bariyerlerinin
        USTUNDEN geciyordu: olcumde en yakin donus 53 m cikti, oysa
@@ -55,7 +63,6 @@
   <!-- Gorus +-90 derece ile sinirli: daha genis acilarda isinlar geriye
        donup govdeye carpiyor. Ileri bakan otomotiv LiDAR'i zaten boyle. -->
   <xacro:property name="lidar_aci"      value="1.5708"/>
-  <xacro:property name="kamera_ileri"   value="0.60"/>
   <xacro:property name="kamera_egim"    value="0.10"/>  <!-- rad, asagi -->
 
   <xacro:property name="PI" value="3.14159265359"/>
