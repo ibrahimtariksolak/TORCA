@@ -1,80 +1,142 @@
+"""Otonom surus: Gazebo + arac + algilama + kontrol.
+
+Onceki surumdeki sorunlar:
+  - Yollar '~/ros2_ws/src/perception_pkg' olarak sabitti; colcon install
+    anlamsiz hale geliyor, setup.py'daki data_files bosa gidiyordu ve
+    paket baska bir makinede calismiyordu.
+  - URDF dosyasi .urdf.xacro adini tasidigi halde duz open() ile
+    okunuyordu; xacro ifadeleri hic islenmiyordu.
+  - Hicbir node'a use_sim_time verilmiyordu. Gazebo sim saati yayinlarken
+    node'lar duvar saatinde calisiyor, zaman damgalari tutarsiz kaliyordu.
+  - Dugumler TimerAction ile 3/4/5 saniyeye dizilmisti; yavas makinede
+    spawn Gazebo hazir olmadan calisiyordu.
+"""
+
 import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+                            RegisterEventHandler, SetEnvironmentVariable)
+from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit, OnProcessStart
+from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
 
 def generate_launch_description():
-    pkg_dir    = os.path.expanduser('~/ros2_ws/src/perception_pkg')
-    world_file = os.path.join(pkg_dir, 'worlds', 'otoban.world')
-    urdf_file  = os.path.join(pkg_dir, 'urdf', 'otonom_arac.urdf.xacro')
+    pkg_share = get_package_share_directory('perception_pkg')
 
-    with open(urdf_file, 'r') as f:
-        robot_desc = f.read()
+    world_arg = DeclareLaunchArgument(
+        'world', default_value=os.path.join(pkg_share, 'worlds', 'otoban.world'),
+        description='Yuklenecek Gazebo dunyasi')
+    gui_arg = DeclareLaunchArgument(
+        'gui', default_value='true',
+        description='gzclient (Gazebo arayuzu) acilsin mi')
+    rviz_arg = DeclareLaunchArgument(
+        'rviz', default_value='true', description='RViz acilsin mi')
+    sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time', default_value='true',
+        description='Dugumler Gazebo saatini kullansin')
+    # Arac dinamigini (direksiyon, hiz, surtunme) olcerken algilama
+    # dugumleri kapatilabilmeli: serit_takip cmd_vel'e yazdigi surece
+    # manuel komutlarla yarisir, sign_detector ise uc YOLO ornegi
+    # acildiginda Gazebo'nun gercek zaman carpanini yere seriyor.
+    algilama_arg = DeclareLaunchArgument(
+        'algilama', default_value='true',
+        description='sign_detector ve serit_takip calissin mi')
+
+    world = LaunchConfiguration('world')
+    use_sim_time = LaunchConfiguration('use_sim_time')
+
+    urdf_xacro = os.path.join(pkg_share, 'urdf', 'otonom_arac.urdf.xacro')
+    # xacro ile isle: dosya gercek xacro, duz okunamaz.
+    # ParameterValue(..., value_type=str) sart: aksi halde launch,
+    # xacro'nun urettigi XML'i YAML sanip ayristirmaya calisiyor ve
+    # "Unable to parse the value of parameter robot_description" ile
+    # patliyor.
+    robot_desc = ParameterValue(Command(['xacro ', urdf_xacro]),
+                                value_type=str)
+
+    # Dunyadaki tabelalar model:// ile cagriliyor. Paketin kendi models/
+    # dizinini arama yoluna ekle ki ~/.gazebo/models disinda da bulunsun.
+    model_path = SetEnvironmentVariable(
+        'GAZEBO_MODEL_PATH',
+        os.path.join(pkg_share, 'models') + ':' +
+        os.path.expanduser('~/.gazebo/models') + ':' +
+        os.environ.get('GAZEBO_MODEL_PATH', ''))
+
+    gzserver = ExecuteProcess(
+        cmd=['gzserver', '--verbose',
+             '-s', 'libgazebo_ros_init.so',
+             '-s', 'libgazebo_ros_factory.so',
+             '-s', 'libgazebo_ros_state.so',
+             world],
+        output='screen')
+
+    gzclient = ExecuteProcess(
+        cmd=['gzclient'], output='screen',
+        condition=IfCondition(LaunchConfiguration('gui')))
+
+    robot_state_publisher = Node(
+        package='robot_state_publisher', executable='robot_state_publisher',
+        name='robot_state_publisher', output='screen',
+        parameters=[{'robot_description': robot_desc,
+                     'use_sim_time': use_sim_time}])
+
+    # Eski surumde 7 argumanli pozisyonel bicim kullaniliyordu; Humble'da
+    # bu bicim kullanimdan kaldirildi ve her acilista uyari basiyordu.
+    world_odom_tf = Node(
+        package='tf2_ros', executable='static_transform_publisher',
+        name='world_odom_tf', output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        arguments=['--x', '0', '--y', '0', '--z', '0',
+                   '--roll', '0', '--pitch', '0', '--yaw', '0',
+                   '--frame-id', 'world', '--child-frame-id', 'odom'])
+
+    # Spawn pozu worlds/generate_otoban.py tarafindan hesaplanir:
+    # oval pistin alt duz bolumu, sag seridin ortasi. z, tekerlek
+    # yaricapindan (0.33) biraz yuksek olmali ki araç zemine gommesin.
+    spawn = Node(
+        package='gazebo_ros', executable='spawn_entity.py', output='screen',
+        arguments=['-topic', 'robot_description',
+                   '-entity', 'otonom_arac',
+                   '-x', '-18.0', '-y', '-26.75', '-z', '0.40',
+                   '-Y', '0.0'])
+
+    algilama = IfCondition(LaunchConfiguration('algilama'))
+
+    sign_detector = Node(
+        package='perception_pkg', executable='sign_detector',
+        name='sign_detector', output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=algilama)
+
+    serit_takip = Node(
+        package='perception_pkg', executable='serit_takip',
+        name='serit_takip', output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(LaunchConfiguration('algilama')))
+
+    rviz = Node(
+        package='rviz2', executable='rviz2', name='rviz2', output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(LaunchConfiguration('rviz')))
 
     return LaunchDescription([
+        world_arg, gui_arg, rviz_arg, sim_time_arg, algilama_arg,
+        model_path,
+        gzserver,
+        gzclient,
+        robot_state_publisher,
+        world_odom_tf,
 
-        ExecuteProcess(
-            cmd=['gzserver', '--verbose',
-                 '-s', 'libgazebo_ros_init.so',
-                 '-s', 'libgazebo_ros_factory.so',
-                 '-s', 'libgazebo_ros_state.so',
-                 world_file],
-            output='screen'
-        ),
-
-        ExecuteProcess(cmd=['gzclient'], output='screen'),
-
-        Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name='robot_state_publisher',
-            parameters=[{'robot_description': robot_desc}],
-            output='screen'
-        ),
-
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='world_odom_tf',
-            arguments=['0', '0', '0', '0', '0', '0', '1', 'world', 'odom'],
-            output='screen'
-        ),
-
-        TimerAction(period=3.0, actions=[
-            Node(
-                package='gazebo_ros',
-                executable='spawn_entity.py',
-                arguments=[
-                    '-file', urdf_file,
-                    '-entity', 'otonom_arac',
-                    # Oval pistin alt duz bolumu, sag seridin ortasi.
-                    # Bu degerleri worlds/generate_otoban.py ekrana yaziyor;
-                    # pist parametreleri degisirse oradan guncelle.
-                    '-x', '-18.0', '-y', '-26.75', '-z', '0.1', '-Y', '0.0',
-                ],
-                output='screen'
-            ),
-        ]),
-
-        TimerAction(period=4.0, actions=[
-            Node(
-                package='perception_pkg',
-                executable='sign_detector',
-                name='sign_detector',
-                output='screen'
-            ),
-        ]),
-
-        TimerAction(period=5.0, actions=[
-            Node(
-                package='perception_pkg',
-                executable='serit_takip',
-                name='serit_takip',
-                output='screen'
-            ),
-        ]),
-
-        TimerAction(period=3.0, actions=[
-            Node(package='rviz2', executable='rviz2', name='rviz2', output='screen'),
-        ]),
+        # Sabit gecikme yerine olay zinciri: gzserver gercekten
+        # basladiktan sonra spawn, spawn bittikten sonra dugumler.
+        RegisterEventHandler(OnProcessStart(
+            target_action=gzserver, on_start=[spawn])),
+        RegisterEventHandler(OnProcessExit(
+            target_action=spawn,
+            on_exit=[sign_detector, serit_takip, rviz])),
     ])
