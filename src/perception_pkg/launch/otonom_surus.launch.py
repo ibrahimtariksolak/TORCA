@@ -47,7 +47,10 @@ def generate_launch_description():
                 arguments=[
                     '-file', urdf_file,
                     '-entity', 'otonom_arac',
-                    '-x', '-10.0', '-y', '1.5', '-z', '0.1', '-Y', '0.0',
+                    # Oval pistin alt duz bolumu, sag seridin ortasi.
+                    # Bu degerleri worlds/generate_otoban.py ekrana yaziyor;
+                    # pist parametreleri degisirse oradan guncelle.
+                    '-x', '-18.0', '-y', '-26.75', '-z', '0.1', '-Y', '0.0',
                 ],
                 output='screen'
             ),
