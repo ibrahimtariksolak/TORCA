@@ -43,8 +43,14 @@ jobs:
 
       - name: Sir / kimlik bilgisi taramasi
         run: |
-          # Deterministik, baska bir servise cagri yapmaz. Olasi
-          # anahtar/parola desenlerini ariyor.
-          ! git grep -nIiE \
+          # Deterministik tarama. CI dosyasinin kendisi yoksayiliyor,
+          # cunku taramanin kendisi dosyada gectigi icin yanlis pozitif
+          # tetikliyor.
+          bulgu=$(git grep -nIiE \
             "api[_-]?key|secret|passwd|password=|private[_-]?key|BEGIN RSA|BEGIN OPENSSH|ghp_|github_pat_|AKIA[0-9A-Z]{16}" \
-            -- . || (echo "::error::Olasi sir bulundu"; exit 1)
+            -- . ':!.github/workflows/ci.yml' || true)
+          if [ -n "$bulgu" ]; then
+            echo "::error::Olasi sir bulundu:"
+            echo "$bulgu"
+            exit 1
+          fi
