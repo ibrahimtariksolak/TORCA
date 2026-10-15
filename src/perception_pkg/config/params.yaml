@@ -1,0 +1,81 @@
+# perception_pkg parametreleri
+#
+# Launch dosyasindan bu dosya tum dugumlere parameters= ile verilir;
+# her dugum sadece kendi anahtarini okur. Degerleri degistirmek icin
+# bu dosyayi duzenleyip paketi yeniden build etmek YETERLI; kodu
+# degistirmek gerekmiyor.
+
+serit_takip:
+  ros__parameters:
+    # Arac kinemetrigi (URDF ile ESLESMELI; aksi takdirde saf takip
+    # yanlis direksiyon acisi uretir)
+    dingil_mesafe: 2.5
+    maks_direksiyon: 0.6
+    serit_genislik: 3.5
+
+    # Hiz profili
+    hiz_duz: 7.0            # m/s, duz bolum / yavas viraj
+    hiz_viraj: 3.5          # m/s, keskin virajda tavan
+
+    # Saf takip on bakis mesafesi: Ld = clamp(kat * v, min, maks)
+    # Buyuk Ld -> yumusak ama gec reaksiyon; kucuk Ld -> salinim riski
+    on_bakis_kat: 1.4
+    on_bakis_min: 6.0
+    on_bakis_maks: 18.0
+
+    # Kamera (URDF ile ESLESMELI; IPM homografisi buna bagli)
+    kamera_yuksek: 1.30
+    kamera_ileri: 1.95
+    kamera_egim: 0.10
+    yatay_fov: 1.40
+
+    debug_yayinla: true
+
+sign_detector:
+  ros__parameters:
+    # Model yolu bos birakilirsa ament_index/share/perception_pkg/weights
+    # altindan best.pt araniyor
+    guven_esigi: 0.60
+    cikarim_hz: 6.0       # YOLO cikarim siklgi; kamera 30 Hz ama throttle
+    imgsz: 640
+    device: ''            # bos = otomatik (CUDA varsa kullanir)
+
+    # tools/tabela_kalibre.py ile olculmus esik:
+    #   gercek Stop_Sign tespitleri 47.6-106.9 px
+    #   uzak yanlis pozitifler <=33.7 px
+    #   -> 35 px ikisini temiz ayiriyor
+    min_bbox_yukseklik: 35
+
+    # Dunyada olmayan siniflari eleme listesi. Olcumde 'Traffic_signal'
+    # 28 tespitin 24'unde yanlis pozitif uretiyordu; bu listede yok,
+    # artik tamamen susturuldu.
+    ilgili_siniflar:
+      - Stop_Sign
+      - No Entry
+      - Give Way
+      - Pedestrian Crossing
+      - Speed Limit 20 KMPh
+      - Speed Limit 30 KMPh
+      - Dangerous Left Curve Ahead
+      - Dangerous Rright Curve Ahead
+      - Round-About
+
+    annotated_yayinla: true
+
+guvenlik:
+  ros__parameters:
+    # Yolun yarim genisligi 3.5 m, aracin yarim genisligi 0.925 m.
+    # 1.20 m aracin govdesinden biraz genis bir koridor koruyor;
+    # bariyer disinda kalan nesneler yanlis pozitif yapmasin diye
+    # yol genisliginin icinde tutuldu.
+    koridor_yari_genislik: 1.20
+
+    # Fren ivmesi 4 m/s^2 (makul bir araç degeri). v=4 m/s icin
+    # kinetik durma mesafesi 2 m; tepki ve ucuncu teker payiyla
+    # birlikte 2.5 m taban.
+    fren_mesafesi_min: 2.5
+    yavaslama_mesafesi: 6.0
+    fren_ivme: 4.0
+
+    aktif: true
+    log_hz: 2.0

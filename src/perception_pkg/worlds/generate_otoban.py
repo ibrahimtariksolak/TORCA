@@ -384,10 +384,14 @@ def engel(ad, s, ofset, duz, yaricap,
       <pose>{x:.4f} {y:.4f} {yukseklik/2:.3f} 0 0 0</pose>
       <link name='link'>
         <collision name='c'>
-          <geometry><box><size>{derinlik:.3f} {genislik:.3f} {yukseklik:.3f}</size></box></geometry>
+          <geometry>
+            <box><size>{derinlik:.3f} {genislik:.3f} {yukseklik:.3f}</size></box>
+          </geometry>
         </collision>
         <visual name='v'>
-          <geometry><box><size>{derinlik:.3f} {genislik:.3f} {yukseklik:.3f}</size></box></geometry>
+          <geometry>
+            <box><size>{derinlik:.3f} {genislik:.3f} {yukseklik:.3f}</size></box>
+          </geometry>
           <material>
             <ambient>0.8 0.1 0.1 1</ambient>
             <diffuse>0.9 0.15 0.15 1</diffuse>

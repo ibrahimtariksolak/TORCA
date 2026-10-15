@@ -24,6 +24,8 @@ setup(
         # ariyor, dolayisiyla share altina kurulmalari sart.
         (os.path.join('share', package_name, 'weights'),
             glob(os.path.join(package_name, 'weights', '*.pt'))),
+        (os.path.join('share', package_name, 'config'),
+            glob(os.path.join('config', '*'))),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

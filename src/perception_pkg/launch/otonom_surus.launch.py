@@ -53,6 +53,8 @@ def generate_launch_description():
     world = LaunchConfiguration('world')
     use_sim_time = LaunchConfiguration('use_sim_time')
 
+    params_yaml = os.path.join(pkg_share, 'config', 'params.yaml')
+
     urdf_xacro = os.path.join(pkg_share, 'urdf', 'otonom_arac.urdf.xacro')
     # xacro ile isle: dosya gercek xacro, duz okunamaz.
     # ParameterValue(..., value_type=str) sart: aksi halde launch,
@@ -113,7 +115,7 @@ def generate_launch_description():
     sign_detector = Node(
         package='perception_pkg', executable='sign_detector',
         name='sign_detector', output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[params_yaml, {'use_sim_time': use_sim_time}],
         condition=algilama)
 
     # Guvenlik aciksa serit_takip cmd_vel_cmd'ye yaziyor ve guvenlik
@@ -128,7 +130,6 @@ def generate_launch_description():
     # launch icin bu ucuncu kosul 'ikili' secimi iki ayri Node tanimina
     # bolmek gerektiriyor; LaunchConfiguration cozumleme zamanlamasi
     # sart kosullu remap'e izin vermiyor.
-    from launch.conditions import UnlessCondition
     from launch.substitutions import AndSubstitution, NotSubstitution
 
     algilama = LaunchConfiguration('algilama')
@@ -140,23 +141,25 @@ def generate_launch_description():
     serit_takip_guvenlikli = Node(
         package='perception_pkg', executable='serit_takip',
         name='serit_takip', output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[params_yaml, {'use_sim_time': use_sim_time}],
         condition=IfCondition(aci_ve_guv))
     serit_takip_direkt = Node(
         package='perception_pkg', executable='serit_takip',
         name='serit_takip', output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[params_yaml, {'use_sim_time': use_sim_time}],
         remappings=[('/arac/cmd_vel_cmd', '/arac/cmd_vel')],
         condition=IfCondition(aci_sade))
 
     guvenlik_node = Node(
         package='perception_pkg', executable='guvenlik',
         name='guvenlik', output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[params_yaml, {'use_sim_time': use_sim_time}],
         condition=IfCondition(guvenlik))
 
+    rviz_config = os.path.join(pkg_share, 'config', 'otonom.rviz')
     rviz = Node(
         package='rviz2', executable='rviz2', name='rviz2', output='screen',
+        arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': use_sim_time}],
         condition=IfCondition(LaunchConfiguration('rviz')))
 
