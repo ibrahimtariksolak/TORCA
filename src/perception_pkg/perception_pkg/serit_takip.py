@@ -182,6 +182,64 @@ class SeritTakip(Node):
         sari = cv2.morphologyEx(sari, cv2.MORPH_OPEN, cekirdek)
         return beyaz, sari
 
+    @staticmethod
+    def _kumeler(satir, bosluk=3):
+        """Bir maske satirindaki ardisik piksel kumelerinin merkezleri."""
+        idx = np.nonzero(satir)[0]
+        if idx.size == 0:
+            return []
+        kopus = np.nonzero(np.diff(idx) > bosluk)[0]
+        parcalar = np.split(idx, kopus + 1)
+        return [float(p.mean()) for p in parcalar if p.size >= 2]
+
+    def _yol_kenarlari(self, kb_beyaz):
+        """Her satirda TUM beyaz kumeleri bulup DIS kenari secer.
+
+        Kesikli sari orta cizgiye bel baglamak calismiyordu: duz
+        bolumde (3 m cizgi + 6 m bosluk) karelerin ancak %2'sinde
+        goruntuye giriyor, capa olmayinca beyaz takipcisi yanlis
+        cizgiye kayiyor ve araci kars'i seride suruyordu (olcum: duz
+        bolumde gercek yanal hata 3.22 m, virajda 0.11 m).
+
+        Yolun yapisi ise belirsiz degil: HER ZAMAN iki beyaz kenar var
+        ve aralari tam bir yol genisligi (2 x serit). Ayrimi buna uyan
+        cifti bulup kucuk Y'li olani (aracin saginda kalan) dis kenar
+        kabul ediyoruz. Araç yanlis seritteyse bile cift dogru
+        bulunur ve merkez onu geri cagirir.
+        """
+        yol_w = 2.0 * self.serit_w
+        kb_y, kb_g = kb_beyaz.shape[:2]
+        adim = max(1, int(0.25 / self.ipm.cozunurluk))
+
+        nokta, tahmin = [], self.beklenen_beyaz
+        for py in range(kb_y - 1, -1, -adim):
+            merkezler = [self.ipm.kb_sutun_to_y(px)
+                         for px in self._kumeler(kb_beyaz[py])]
+            if not merkezler:
+                continue
+            merkezler.sort()
+
+            secim = None
+            if len(merkezler) >= 2:
+                # ayrimi yol genisligine en yakin cift
+                en_iyi, en_iyi_hata = None, 1e9
+                for i in range(len(merkezler)):
+                    for j in range(i + 1, len(merkezler)):
+                        hata = abs((merkezler[j] - merkezler[i]) - yol_w)
+                        if hata < en_iyi_hata:
+                            en_iyi_hata, en_iyi = hata, merkezler[i]
+                if en_iyi_hata < 0.25 * yol_w:
+                    secim = en_iyi            # kucuk Y = dis kenar
+            if secim is None:
+                # tek cizgi: onceki tahmine en yakin olani al
+                secim = min(merkezler, key=lambda y: abs(y - tahmin))
+                if abs(secim - tahmin) > 2.0:
+                    continue
+
+            nokta.append((self.ipm.kb_satir_to_x(py), secim))
+            tahmin = secim
+        return nokta
+
     def _cizgi_noktalari(self, kb_maske, beklenen_y, pencere=1.3):
         """Kus bakisi maskeden (X, Y) nokta listesi cikarir.
 
@@ -215,24 +273,28 @@ class SeritTakip(Node):
     def _serit_merkezi(self, kb_beyaz, kb_sari):
         """Serit merkez noktalarini (X, Y) olarak dondurur.
 
-        SARI ONCE aranir. Dunyada tek sari cizgi vardir (orta cizgi), yani
-        belirsiz degildir. Beyaz ise IKI tanedir: dis kenar (-1.75 m) ve
-        ic kenar (+5.25 m). Olcumde kayan pencere ic kenara kilitlenmis,
-        serit merkezini 3.5 m kaydirmis ve araci kars'i seride surmustu
-        (y = -22.1, olmasi gereken -26.75). Bu yuzden beyazin beklentisi,
-        sari gorundugu her karede ona gore yeniden tohumlanir.
+        BIRINCIL REFERANS BEYAZ DIS KENAR, sari degil. Sari orta cizgi
+        kesiklidir (3 m cizgi + 6 m bosluk) ve olcumde duz bolumde
+        karelerin ancak %2'sinde goruntuye giriyordu; capa olmadigindan
+        araç duz bolumde kars'i seride geciyor, algi bunu fark etmiyordu
+        (gercek yanal hata: duzde 3.22 m, virajda 0.11 m).
+
+        Beyaz kenarlar ise her zaman gorunur ve aralari sabittir; hangisi
+        oldugu _yol_kenarlari icinde yol genisligine gore cozulur.
+        Sari gorundugunde dogrulama icin kullanilir.
         """
+        b_nokta = self._yol_kenarlari(kb_beyaz)
+        if b_nokta:
+            self.beklenen_beyaz = float(np.clip(
+                0.7 * self.beklenen_beyaz + 0.3 * b_nokta[0][1], -6.0, 2.0))
+
         s_nokta = self._cizgi_noktalari(kb_sari, self.beklenen_sari)
         if s_nokta:
             self.beklenen_sari = float(np.clip(
-                0.7 * self.beklenen_sari + 0.3 * s_nokta[0][1], -1.0, 4.5))
-            # dis kenar, orta cizginin tam bir serit genisligi sagindadir
-            self.beklenen_beyaz = self.beklenen_sari - self.serit_w
-
-        b_nokta = self._cizgi_noktalari(kb_beyaz, self.beklenen_beyaz)
-        if b_nokta and not s_nokta:
-            self.beklenen_beyaz = float(np.clip(
-                0.7 * self.beklenen_beyaz + 0.3 * b_nokta[0][1], -4.5, 1.0))
+                0.7 * self.beklenen_sari + 0.3 * s_nokta[0][1], -3.0, 6.0))
+        elif b_nokta:
+            # sari kaybolduysa beklentisini dis kenardan tasi
+            self.beklenen_sari = self.beklenen_beyaz + self.serit_w
 
         b = dict((round(X, 2), Y) for X, Y in b_nokta)
         s = dict((round(X, 2), Y) for X, Y in s_nokta)
