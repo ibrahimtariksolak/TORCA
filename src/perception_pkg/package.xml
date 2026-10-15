@@ -4,8 +4,8 @@
   <name>perception_pkg</name>
   <version>0.0.0</version>
   <description>ROS2 perception package for autonomous vehicle: traffic sign detection and lane following</description>
-  <maintainer email="tarik@todo.todo">tarik</maintainer>
-  <license>TODO: License declaration</license>
+  <maintainer email="ibrahimtariksolak.is@gmail.com">Ibrahim Tarik Solak</maintainer>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>cv_bridge</depend>

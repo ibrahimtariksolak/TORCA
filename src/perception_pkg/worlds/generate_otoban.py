@@ -39,6 +39,10 @@ BARIYER_ADIM = 4.0
 BARIYER_YUKSEK = 0.8
 BARIYER_KALIN = 0.3
 
+# Tabela mesh olcegi. 1.0 (gercek boyut) ile YOLO tabelayi ancak
+# 10 m'den yakinda taniyordu; bkz. tools/tabela_kalibre.py
+TABELA_OLCEK = 2.5
+
 
 def merkez_hat_uzunluk(duz, yaricap):
     """Oval orta hattin toplam uzunlugu."""
@@ -315,20 +319,54 @@ def bariyer(ad, ofset, duz, yaricap, adim=BARIYER_ADIM,
 """
 
 
-def tabela(ad, model_uri, s, ofset, duz, yaricap, yaw_ek=0.0):
-    """Hazir tabela modelini pistin `s` mesafesinde, `ofset` yaninda koyar.
+def tabela(ad, model_uri, mesh_adi, malzeme_adi, s, ofset, duz, yaricap,
+           olcek=TABELA_OLCEK, yaw_ek=0.0):
+    """Hazir tabela mesh'ini pistin `s` mesafesinde, `ofset` yaninda koyar.
 
     Tabela yuzu araca donuk olacak sekilde dondurulur (yaw + 180 derece,
     cunku araç +t yonunde gelir ve tabelaya onden bakar).
+
+    `olcek` neden gerekli: YOLO'nun bir tabelayi siniflandirabilmesi icin
+    goruntude yeterince buyuk olmasi lazim. Olcumde gercek boyutlu dur
+    tabelasi ancak 10 m'den yakinda taninabiliyordu (4 m/s'de 2.5 s
+    tepki suresi). fy=380 ile 25 m'de 28 px bbox elde etmek icin tabela
+    ~1.8 m yuksekliginde olmali.
     """
     x, y, teta = ofset_nokta(s, ofset, duz, yaricap)
     yaw = teta + math.pi + yaw_ek
-    return f"""    <include>
-      <uri>model://{model_uri}</uri>
-      <name>{ad}</name>
-      <pose>{x:.4f} {y:.4f} 0 0 0 {yaw:.5f}</pose>
+
+    # Malzeme bloğu: modelin materials/scripts dizini varsa ZORUNLU.
+    # Ilk denemede atlanmisti ve mesh dokusuz gri bir sekil olarak
+    # render edildi; dur tabelasinin kirmizi sekizgeni ve STOP yazisi
+    # dokuda oldugundan YOLO tespiti tamamen sifira dustu.
+    # speed_limit_sign'da scripts dizini yok, dokuyu .dae kendi
+    # tasiyor; orada blok atlanmali.
+    malzeme = '' if malzeme_adi is None else f"""
+          <material>
+            <script>
+              <uri>model://{model_uri}/materials/scripts</uri>
+              <uri>model://{model_uri}/materials/textures</uri>
+              <name>{malzeme_adi}</name>
+            </script>
+          </material>"""
+
+    # <include> SDF'te olcek desteklemiyor, bu yuzden model inline
+    # kuruluyor ve mesh <scale> ile buyutuluyor.
+    return f"""    <model name='{ad}'>
       <static>1</static>
-    </include>
+      <pose>{x:.4f} {y:.4f} 0 0 0 {yaw:.5f}</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://{model_uri}/meshes/{mesh_adi}</uri>
+              <scale>{olcek} {olcek} {olcek}</scale>
+            </mesh>
+          </geometry>{malzeme}
+        </visual>
+      </link>
+    </model>
 """
 
 
@@ -364,15 +402,36 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
         parcalar.append(bariyer('ic_bariyer', +(yarim_yol + 0.5),
                                 duz, yaricap))
 
-    # --- tabelalar: araç saat yonu tersine gider, sag serittedir (-ofset)
-    #     tabelalar yolun sag kenarinin disina konur
+    # --- tabelalar: araç saat yonu tersine gider ve sag serittedir,
+    #     dolayisiyla tabelalar yolun sag kenarinin disina konur.
+    #
+    # Yerlesim keyfi degil, pistin yapisina gore secildi. Oval uzerinde
+    # s = 0, 60, 138.5, 198.5 noktalari sirasiyla alt duzun basi, sag
+    # virajin girisi, ust duzun basi ve sol virajin girisidir.
+    #
+    # NOT: Elde YOLO'nun GERCEKTEN tanidigi tek model stop_sign.
+    # speed_limit_sign ve speed_limit_30 kalibrasyonda hic tespit
+    # edilmedi (model gercek tabela fotograflariyla egitilmis, bu
+    # mesh'leri tabela olarak gormuyor). speed_limit_sign gorsel
+    # zenginlik icin duruyor ama kontrolcu ona tepki veremiyor.
     tabela_ofset = -(kenar + 1.2)
-    parcalar.append(tabela('hiz_limit_30', 'speed_limit_30',
-                           0.15 * merkez_boy, tabela_ofset, duz, yaricap))
-    parcalar.append(tabela('dur_tabelasi', 'stop_sign',
-                           0.45 * merkez_boy, tabela_ofset, duz, yaricap))
-    parcalar.append(tabela('hiz_limit_genel', 'speed_limit_sign',
-                           0.70 * merkez_boy, tabela_ofset, duz, yaricap))
+    viraj_boy = math.pi * yaricap
+
+    # Sag virajin 25 m oncesi: surucunun yavaslamasi gereken yer
+    parcalar.append(tabela('dur_tabelasi', 'stop_sign', 'stop_sign.dae',
+                           'StopSign/Diffuse',
+                           duz - 25.0, tabela_ofset, duz, yaricap))
+    # Ust duzun ortasi: ikinci bir tanima firsati
+    parcalar.append(tabela('dur_tabelasi_2', 'stop_sign', 'stop_sign.dae',
+                           'StopSign/Diffuse',
+                           duz + viraj_boy + duz / 2.0,
+                           tabela_ofset, duz, yaricap))
+    # Gorsel: sol virajin girisi. materials/scripts dizini olmadigi
+    # icin malzeme adi None, doku .dae icinden geliyor.
+    parcalar.append(tabela('hiz_limit_gorsel', 'speed_limit_sign',
+                           'speed_limit_sign.dae', None,
+                           2 * duz + viraj_boy + 5.0,
+                           tabela_ofset, duz, yaricap, olcek=1.0))
 
     golge = '1' if golgeler else '0'
 

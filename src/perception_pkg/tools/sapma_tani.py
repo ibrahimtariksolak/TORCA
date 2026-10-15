@@ -15,9 +15,6 @@ yanli.
 import math
 import sys
 
-sys.path.insert(0, '/home/tarik/ros2_ws/install/perception_pkg/'
-                   'lib/python3.10/site-packages')
-
 import cv2
 import numpy as np
 import rclpy
@@ -26,7 +23,11 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-from perception_pkg.ipm import IPM
+try:
+    from perception_pkg.ipm import IPM
+except ImportError:
+    sys.exit('perception_pkg bulunamadi. Once calisma alanini kaynak al:\n'
+             '    source install/setup.bash')
 
 DUZ, R, SERIT = 60.0, 25.0, 3.5
 YARIM = DUZ / 2.0
@@ -146,7 +147,8 @@ def main():
         a = np.array([o[1] for o in ornekler])
         f = a - g
         print(f'--- {baslik}  (n={len(ornekler)})')
-        print(f'    GERCEK yanal hata : ort {g.mean():+.2f}  |ort| {np.abs(g).mean():.2f}  std {g.std():.2f}')
+        print(f'    GERCEK yanal hata : ort {g.mean():+.2f}  '
+              f'|ort| {np.abs(g).mean():.2f}  std {g.std():.2f}')
         print(f'    ALGININ gordugu   : ort {a.mean():+.2f}  std {a.std():.2f}')
         print(f'    FARK (algi-gercek): ort {f.mean():+.2f}  std {f.std():.2f}')
         kay = {}

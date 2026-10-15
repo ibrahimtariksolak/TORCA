@@ -10689,24 +10689,65 @@
         </visual>
       </link>
     </model>
-    <include>
-      <uri>model://speed_limit_30</uri>
-      <name>hiz_limit_30</name>
-      <pose>11.5619 -29.7000 0 0 0 3.14159</pose>
+    <model name='dur_tabelasi'>
       <static>1</static>
-    </include>
-    <include>
-      <uri>model://stop_sign</uri>
-      <name>dur_tabelasi</name>
-      <pose>45.6290 25.2552 0 0 0 5.72903</pose>
+      <pose>5.0000 -29.7000 0 0 0 3.14159</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='dur_tabelasi_2'>
       <static>1</static>
-    </include>
-    <include>
-      <uri>model://speed_limit_sign</uri>
-      <name>hiz_limit_genel</name>
-      <pose>-25.4159 29.7000 0 0 0 6.28319</pose>
+      <pose>-0.0000 29.7000 0 0 0 6.28319</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='hiz_limit_gorsel'>
       <static>1</static>
-    </include>
+      <pose>-35.9005 29.1080 0 0 0 6.48319</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://speed_limit_sign/meshes/speed_limit_sign.dae</uri>
+              <scale>1.0 1.0 1.0</scale>
+            </mesh>
+          </geometry>
+        </visual>
+      </link>
+    </model>
 
   </world>
 </sdf>
