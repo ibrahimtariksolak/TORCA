@@ -46,6 +46,9 @@ def generate_launch_description():
     algilama_arg = DeclareLaunchArgument(
         'algilama', default_value='true',
         description='sign_detector ve serit_takip calissin mi')
+    guvenlik_arg = DeclareLaunchArgument(
+        'guvenlik', default_value='true',
+        description='LiDAR tabanli acil fren katmani aktif mi')
 
     world = LaunchConfiguration('world')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -113,11 +116,44 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}],
         condition=algilama)
 
-    serit_takip = Node(
+    # Guvenlik aciksa serit_takip cmd_vel_cmd'ye yaziyor ve guvenlik
+    # oradan okuyup filtreleyerek cmd_vel'e yayinliyor. Guvenlik
+    # kapaliysa remap ile cmd_vel_cmd dogrudan cmd_vel'e gidiyor.
+    # Iki node tanimi gerekli cunku LaunchConfiguration cozumleme
+    # zamanlamasi sart kosullu remap'e izin vermiyor.
+    # algilama & guvenlik -> serit_takip + guvenlik, remap yok
+    # algilama & !guvenlik -> serit_takip, remap cmd_vel_cmd -> cmd_vel
+    # !algilama -> hicbiri calismiyor
+    #
+    # launch icin bu ucuncu kosul 'ikili' secimi iki ayri Node tanimina
+    # bolmek gerektiriyor; LaunchConfiguration cozumleme zamanlamasi
+    # sart kosullu remap'e izin vermiyor.
+    from launch.conditions import UnlessCondition
+    from launch.substitutions import AndSubstitution, NotSubstitution
+
+    algilama = LaunchConfiguration('algilama')
+    guvenlik = LaunchConfiguration('guvenlik')
+
+    aci_ve_guv = AndSubstitution(algilama, guvenlik)
+    aci_sade = AndSubstitution(algilama, NotSubstitution(guvenlik))
+
+    serit_takip_guvenlikli = Node(
         package='perception_pkg', executable='serit_takip',
         name='serit_takip', output='screen',
         parameters=[{'use_sim_time': use_sim_time}],
-        condition=IfCondition(LaunchConfiguration('algilama')))
+        condition=IfCondition(aci_ve_guv))
+    serit_takip_direkt = Node(
+        package='perception_pkg', executable='serit_takip',
+        name='serit_takip', output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        remappings=[('/arac/cmd_vel_cmd', '/arac/cmd_vel')],
+        condition=IfCondition(aci_sade))
+
+    guvenlik_node = Node(
+        package='perception_pkg', executable='guvenlik',
+        name='guvenlik', output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(guvenlik))
 
     rviz = Node(
         package='rviz2', executable='rviz2', name='rviz2', output='screen',
@@ -126,6 +162,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         world_arg, gui_arg, rviz_arg, sim_time_arg, algilama_arg,
+        guvenlik_arg,
         model_path,
         gzserver,
         gzclient,
@@ -138,5 +175,6 @@ def generate_launch_description():
             target_action=gzserver, on_start=[spawn])),
         RegisterEventHandler(OnProcessExit(
             target_action=spawn,
-            on_exit=[sign_detector, serit_takip, rviz])),
+            on_exit=[sign_detector, serit_takip_guvenlikli,
+                     serit_takip_direkt, guvenlik_node, rviz])),
     ])

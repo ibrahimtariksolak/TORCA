@@ -36,6 +36,7 @@ setup(
         'console_scripts': [
             'sign_detector = perception_pkg.sign_detector:main',
             'serit_takip   = perception_pkg.serit_takip:main',
+            'guvenlik      = perception_pkg.guvenlik:main',
         ],
     },
 )

@@ -370,8 +370,37 @@ def tabela(ad, model_uri, mesh_adi, malzeme_adi, s, ofset, duz, yaricap,
 """
 
 
+def engel(ad, s, ofset, duz, yaricap,
+          genislik=1.2, derinlik=0.5, yukseklik=1.0):
+    """Pistin ileri bir noktasina duran bir engel koyar.
+
+    Kullanim: LiDAR tabanli acil fren katmanini sinamak icin. Engel
+    aracin yoluna duser ve kontrolcu seritten disari cikmadan durmak
+    zorunda kalir. Statik, kirmizi, carpisma geometrisi var.
+    """
+    x, y, _ = ofset_nokta(s, ofset, duz, yaricap)
+    return f"""    <model name='{ad}'>
+      <static>1</static>
+      <pose>{x:.4f} {y:.4f} {yukseklik/2:.3f} 0 0 0</pose>
+      <link name='link'>
+        <collision name='c'>
+          <geometry><box><size>{derinlik:.3f} {genislik:.3f} {yukseklik:.3f}</size></box></geometry>
+        </collision>
+        <visual name='v'>
+          <geometry><box><size>{derinlik:.3f} {genislik:.3f} {yukseklik:.3f}</size></box></geometry>
+          <material>
+            <ambient>0.8 0.1 0.1 1</ambient>
+            <diffuse>0.9 0.15 0.15 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+"""
+
+
 def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
-               serit=SERIT_GENISLIK, golgeler=False, bariyerli=True):
+               serit=SERIT_GENISLIK, golgeler=False, bariyerli=True,
+               engel_s=None):
     kenar = serit                       # orta hattan kenar cizgisine
     yarim_yol = serit + YOL_PAYI        # asfalt yarim genisligi
 
@@ -432,6 +461,10 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
                            'speed_limit_sign.dae', None,
                            2 * duz + viraj_boy + 5.0,
                            tabela_ofset, duz, yaricap, olcek=1.0))
+
+    # --- engel: isteniyorsa pistin s metresine, sag seridin ortasina
+    if engel_s is not None:
+        parcalar.append(engel('engel', engel_s, -serit / 2.0, duz, yaricap))
 
     golge = '1' if golgeler else '0'
 
@@ -568,10 +601,14 @@ def main():
                    help='golgeleri ac (serit tespiti dayaniklilik testi)')
     p.add_argument('--bariyersiz', action='store_true',
                    help='kenar bariyerlerini koyma')
+    p.add_argument('--engel-s', type=float, default=None,
+                   help='pistin bu s metresine (orta hat uzunlugu boyunca) '
+                        'bir engel koy; LiDAR acil fren testi icin')
     a = p.parse_args()
 
     sdf = dunya_uret(duz=a.duz, yaricap=a.yaricap, serit=a.serit,
-                     golgeler=a.golgeler, bariyerli=not a.bariyersiz)
+                     golgeler=a.golgeler, bariyerli=not a.bariyersiz,
+                     engel_s=a.engel_s)
 
     with open(a.cikti, 'w') as f:
         f.write(sdf)

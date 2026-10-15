@@ -102,7 +102,11 @@ class SeritTakip(Node):
                                  self.goruntu_cb, kamera_qos)
         self.create_subscription(String, '/detected_sign', self.tabela_cb, 10)
         self.create_subscription(Odometry, '/arac/odom', self.odom_cb, 10)
-        self.cmd_pub = self.create_publisher(Twist, '/arac/cmd_vel', 10)
+        # Cikis /arac/cmd_vel_cmd'ye gidiyor; guvenlik dugumu (varsa)
+        # bunu /arac/cmd_vel'e filtreleyerek yayinliyor. guvenlik dugumu
+        # kapaliysa launch bir remap koyarak cmd_vel_cmd'yi dogrudan
+        # cmd_vel'e yonlendiriyor.
+        self.cmd_pub = self.create_publisher(Twist, '/arac/cmd_vel_cmd', 10)
         self.debug_pub = self.create_publisher(Image, '/serit_debug', 10)
 
         # ackermann_drive eklentisi ILK cmd_vel mesajini alana kadar
