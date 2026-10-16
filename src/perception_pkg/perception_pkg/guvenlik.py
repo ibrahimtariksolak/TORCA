@@ -35,12 +35,14 @@ class Guvenlik(Node):
         # 1.6 + 0.25 = 1.85 m. Yarim: 0.925 m. Fiziksel genislikten biraz
         # genis bir koridor kontrol ediyoruz.
         self.declare_parameter('koridor_yari_genislik', 1.20)
-        # Acil fren mesafesi dinamik hesaplaniyor: en kotu durumda
-        # fren ivmesi 4 m/s^2. v=4 m/s icin durma mesafesi 2 m,
-        # tepki payiyla ~3 m. Baslangic degeri olarak:
-        self.declare_parameter('fren_mesafesi_min', 2.5)
-        self.declare_parameter('yavaslama_mesafesi', 6.0)
-        self.declare_parameter('fren_ivme', 4.0)         # m/s^2
+        # Varsayilanlar tools/fren_olcum.py ile OLCULDU:
+        #   6.9 m/s -> fren yolu 9.64 m, ortalama ivme 2.00 m/s^2
+        # Onceki varsayilanlar (ivme 4.0, yavaslama 6.0 m) fiziksel
+        # olarak imkansizdi: araç 7 m/s'de 9.6 m'ye ihtiyac duyarken
+        # engeli 6 m'de fark ediyor ve carpiyordu.
+        self.declare_parameter('fren_mesafesi_min', 3.0)
+        self.declare_parameter('yavaslama_mesafesi', 18.0)
+        self.declare_parameter('fren_ivme', 2.0)         # m/s^2, olculdu
         self.declare_parameter('aktif', True)
         self.declare_parameter('log_hz', 2.0)
 
@@ -53,7 +55,13 @@ class Guvenlik(Node):
         self.log_min_aralik = 1.0 / max(1e-3, g('log_hz').value)
         self.son_log = 0.0
 
+        # Donus yayini hesaplamak icin dingil mesafesi lazim; URDF ile
+        # ayni olmali (bkz. config/params.yaml: serit_takip.dingil_mesafe)
+        self.declare_parameter('dingil_mesafe', 2.5)
+        self.dingil = self.get_parameter('dingil_mesafe').value
+
         self.en_yakin = float('inf')      # koridor icindeki en yakin donus
+        self.son_direksiyon = 0.0         # son komut edilen direksiyon acisi
         self.scan_zamani = 0.0
         self.scan_bayat_esigi = 0.5        # 500 ms'den eski scan guvenilmez
 
@@ -72,31 +80,66 @@ class Guvenlik(Node):
         return self.get_clock().now().nanoseconds * 1e-9
 
     def scan_cb(self, msg):
-        """Koridor icindeki (|y| < yari_w) en yakin donusu bul.
+        """Aracin PLANLANAN YAYI boyunca en yakin engeli bul.
 
-        LiDAR arac cercevesinde onde ve ortada. Her isinin uc noktasi
-        (r cos a, r sin a); koridor filtresi |r sin a| < yari_w.
+        Koridoru duz ileri almak virajda ise yaramiyor: araç 26.75 m
+        yaricapli bir yayda donerken duz ileri bakis dis bariyere
+        sqrt(29.75^2 - 26.75^2) = 13.0 m'de carpiyor. yavaslama_mesafesi
+        18 m'ye cikarildiginda katman virajda surekli yanlis pozitif
+        uretip araci 1.26 m/s'ye dusurmustu (duzde 3.96 m/s).
+
+        Dogrusu: mevcut direksiyon acisindan donus yaricapini cikar
+        (R = L / tan(delta)) ve engelleri bu YAYA gore degerlendir.
+        Yaydan sapmasi yari_w'den kucuk olanlar tehlikeli; mesafe de
+        duz x degil YAY BOYU olarak olculur.
         """
         acilar = (msg.angle_min
                   + np.arange(len(msg.ranges)) * msg.angle_increment)
         menz = np.asarray(msg.ranges)
-        gecerli = np.isfinite(menz) & (menz > msg.range_min) & (menz < msg.range_max)
+        gecerli = (np.isfinite(menz) & (menz > msg.range_min)
+                   & (menz < msg.range_max))
+        self.scan_zamani = self._simdi()
         if not np.any(gecerli):
             self.en_yakin = float('inf')
-            self.scan_zamani = self._simdi()
             return
 
-        y = menz * np.sin(acilar)
         x = menz * np.cos(acilar)
-        koridor = gecerli & (np.abs(y) < self.yari_w) & (x > 0.0)
-        if not np.any(koridor):
-            self.en_yakin = float('inf')
-        else:
-            self.en_yakin = float(x[koridor].min())
-        self.scan_zamani = self._simdi()
+        y = menz * np.sin(acilar)
+
+        delta = self.son_direksiyon
+        if abs(delta) < 0.02:
+            # Duz gidis: klasik dikdortgen koridor
+            koridor = gecerli & (np.abs(y) < self.yari_w) & (x > 0.0)
+            self.en_yakin = (float(x[koridor].min()) if np.any(koridor)
+                             else float('inf'))
+            return
+
+        # Donus yayi: merkez arac cercevesinde (0, R)
+        R = self.dingil / math.tan(delta)
+        r_nokta = np.hypot(x, y - R)
+        yaydan_sapma = np.abs(r_nokta - abs(R))
+
+        # Merkeze gore acisal konum; arac (orijin) referans alinir
+        phi_arac = math.atan2(-R, 0.0)
+        phi_nokta = np.arctan2(y - R, x)
+        suprulen = phi_nokta - phi_arac
+        if R < 0:                      # saga donus: ters yon
+            suprulen = -suprulen
+        suprulen = np.mod(suprulen, 2 * math.pi)   # [0, 2pi) -> hep ileri
+
+        yay_boyu = abs(R) * suprulen
+        koridor = (gecerli & (yaydan_sapma < self.yari_w)
+                   & (yay_boyu < msg.range_max))
+        self.en_yakin = (float(yay_boyu[koridor].min()) if np.any(koridor)
+                         else float('inf'))
 
     def cmd_cb(self, msg):
         """Giren komutu guvenlik denetiminden gecirip yayinla."""
+        # Bir sonraki taramanin yay hesabi icin direksiyon acisini sakla.
+        # (ackermann_drive eklentisi angular.z'yi direksiyon acisi olarak
+        # yorumluyor; olcumle dogrulandi.)
+        self.son_direksiyon = msg.angular.z
+
         if not self.aktif:
             self.pub.publish(msg)
             return

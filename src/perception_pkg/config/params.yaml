@@ -70,12 +70,21 @@ guvenlik:
     # yol genisliginin icinde tutuldu.
     koridor_yari_genislik: 1.20
 
-    # Fren ivmesi 4 m/s^2 (makul bir araç degeri). v=4 m/s icin
-    # kinetik durma mesafesi 2 m; tepki ve ucuncu teker payiyla
-    # birlikte 2.5 m taban.
-    fren_mesafesi_min: 2.5
-    yavaslama_mesafesi: 6.0
-    fren_ivme: 4.0
+    # ONEMLI: Bu degerler tools/fren_olcum.py ile OLCULDU, tahmin degil.
+    #
+    # Ilk surumde fren_ivme 4.0 m/s^2 varsayilmisti ve yavaslama
+    # mesafesi 6.0 m idi. Gercek olcum:
+    #     3.0 m/s -> fren yolu 1.96 m, ivme 1.54 m/s^2
+    #     6.9 m/s -> fren yolu 9.64 m, ivme 2.00 m/s^2
+    # Yani araç 7 m/s'de durmak icin 9.6 m'ye ihtiyac duyuyor ama
+    # katman engeli 6 m'de fark ediyordu: fiziksel olarak duramaz,
+    # engele carpardi.
+    #
+    # Yeni degerler: 9.6 m fren + 2.8 m tepki payi (0.4 s @ 7 m/s)
+    # + emniyet = 18 m.
+    fren_mesafesi_min: 3.0
+    yavaslama_mesafesi: 18.0
+    fren_ivme: 2.0
 
     aktif: true
     log_hz: 2.0

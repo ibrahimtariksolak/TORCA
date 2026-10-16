@@ -333,7 +333,19 @@ def tabela(ad, model_uri, mesh_adi, malzeme_adi, s, ofset, duz, yaricap,
     ~1.8 m yuksekliginde olmali.
     """
     x, y, teta = ofset_nokta(s, ofset, duz, yaricap)
-    yaw = teta + math.pi + yaw_ek
+    # Tabela yuzu YOLA DIK olmali, yani gelen araca donuk.
+    #
+    # Ilk surumde yaw = teta + pi kullaniliyordu ve tabelalar yola
+    # PARALEL duruyordu: araç onlari kenardan, ince bir cizgi olarak
+    # goruyordu. YOLO hicbir sey taniyamiyordu.
+    #
+    # Olcum (scratchpad/yaw_testi.py, kamera +x yonune bakarken):
+    #   yaw=0      -> kenardan, ince cizgi
+    #   yaw=pi/2   -> tabelanin ARKASI (beyaz sekizgen)
+    #   yaw=pi     -> kenardan, ince cizgi   <- eski hatali deger
+    #   yaw=3pi/2  -> YUZU (kirmizi sekizgen + STOP yazisi)  <- dogru
+    # Yani yol tegeti teta iken dogru yaw = teta - pi/2.
+    yaw = teta - math.pi / 2.0 + yaw_ek
 
     # Malzeme bloğu: modelin materials/scripts dizini varsa ZORUNLU.
     # Ilk denemede atlanmisti ve mesh dokusuz gri bir sekil olarak
@@ -443,28 +455,61 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
     # virajin girisi, ust duzun basi ve sol virajin girisidir.
     #
     # NOT: Elde YOLO'nun GERCEKTEN tanidigi tek model stop_sign.
-    # speed_limit_sign ve speed_limit_30 kalibrasyonda hic tespit
-    # edilmedi (model gercek tabela fotograflariyla egitilmis, bu
-    # mesh'leri tabela olarak gormuyor). speed_limit_sign gorsel
-    # zenginlik icin duruyor ama kontrolcu ona tepki veremiyor.
+    # speed_limit_sign kalibrasyonda hic tespit edilmedi (model gercek
+    # tabela fotograflariyla egitilmis, bu mesh'i tabela olarak
+    # gormuyor); gorsel zenginlik icin duruyor ama kontrolcu ona tepki
+    # veremiyor. Bu yuzden TANINAN tabela sayisini artirmanin tek yolu
+    # stop_sign'i pistin farkli noktalarina dagitmak.
     tabela_ofset = -(kenar + 1.2)
     viraj_boy = math.pi * yaricap
 
-    # Sag virajin 25 m oncesi: surucunun yavaslamasi gereken yer
-    parcalar.append(tabela('dur_tabelasi', 'stop_sign', 'stop_sign.dae',
-                           'StopSign/Diffuse',
-                           duz - 25.0, tabela_ofset, duz, yaricap))
-    # Ust duzun ortasi: ikinci bir tanima firsati
-    parcalar.append(tabela('dur_tabelasi_2', 'stop_sign', 'stop_sign.dae',
-                           'StopSign/Diffuse',
-                           duz + viraj_boy + duz / 2.0,
-                           tabela_ofset, duz, yaricap))
-    # Gorsel: sol virajin girisi. materials/scripts dizini olmadigi
-    # icin malzeme adi None, doku .dae icinden geliyor.
-    parcalar.append(tabela('hiz_limit_gorsel', 'speed_limit_sign',
-                           'speed_limit_sign.dae', None,
-                           2 * duz + viraj_boy + 5.0,
-                           tabela_ofset, duz, yaricap, olcek=1.0))
+    # Pist uzerindeki onemli noktalar (orta hat s cinsinden):
+    #   0            alt duzun basi (araç s=12'de doguyor, +s yonune gider)
+    #   duz          sag virajin girisi
+    #   duz+vb       ust duzun basi
+    #   2*duz+vb     sol virajin girisi
+    #   2*(duz+vb)   tur tamamlandi
+    #
+    # Tabelalar surucunun karar vermesi gereken yerlere dagitiliyor:
+    # viraj girislerinden once ve duz bolumler boyunca.
+    #
+    # (ad, s, tip) -- tip 'dur' YOLO tarafindan taninir, 'hiz' gorseldir
+    yerlesim = [
+        ('dur_alt_duz',     0.30 * duz,                  'dur'),
+        ('hiz_limit_1',     0.60 * duz,                  'hiz'),
+        ('dur_viraj1_once', duz - 8.0,                   'dur'),
+        ('dur_ust_duz_1',   duz + viraj_boy + 12.0,      'dur'),
+        ('hiz_limit_2',     duz + viraj_boy + 30.0,      'hiz'),
+        ('dur_ust_duz_2',   duz + viraj_boy + 42.0,      'dur'),
+        ('dur_viraj2_once', 2 * duz + viraj_boy - 4.0,   'dur'),
+        ('dur_tur_kapanis', 2 * (duz + viraj_boy) - 25.0, 'dur'),
+    ]
+
+    # Ayni s'e iki tabela konursa Gazebo'da ust uste binerler ve bu
+    # sessizce gozden kacar; ilk surumde dur_viraj1_once ile
+    # hiz_limit_1 tam ayni noktaya dusmustu. Uretim sirasinda kontrol:
+    toplam_s = 2 * (duz + viraj_boy)
+    for i in range(len(yerlesim)):
+        for j in range(i + 1, len(yerlesim)):
+            fark = abs(yerlesim[i][1] - yerlesim[j][1])
+            fark = min(fark, toplam_s - fark)      # dairesel mesafe
+            if fark < 10.0:
+                raise ValueError(
+                    f'{yerlesim[i][0]} ve {yerlesim[j][0]} tabelalari '
+                    f'{fark:.1f} m arayla, en az 10 m olmali')
+
+    for ad, s, tip in yerlesim:
+        if tip == 'dur':
+            parcalar.append(tabela(ad, 'stop_sign', 'stop_sign.dae',
+                                   'StopSign/Diffuse',
+                                   s, tabela_ofset, duz, yaricap))
+        else:
+            # materials/scripts dizini olmadigi icin malzeme adi None,
+            # doku .dae icinden geliyor
+            parcalar.append(tabela(ad, 'speed_limit_sign',
+                                   'speed_limit_sign.dae', None,
+                                   s, tabela_ofset, duz, yaricap,
+                                   olcek=1.0))
 
     # --- engel: isteniyorsa pistin s metresine, sag seridin ortasina
     if engel_s is not None:

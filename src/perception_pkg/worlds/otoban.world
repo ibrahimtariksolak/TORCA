@@ -10689,9 +10689,9 @@
         </visual>
       </link>
     </model>
-    <model name='dur_tabelasi'>
+    <model name='dur_alt_duz'>
       <static>1</static>
-      <pose>5.0000 -29.7000 0 0 0 3.14159</pose>
+      <pose>-12.0000 -29.7000 0 0 0 -1.57080</pose>
       <link name='link'>
         <visual name='v'>
           <cast_shadows>false</cast_shadows>
@@ -10711,31 +10711,9 @@
         </visual>
       </link>
     </model>
-    <model name='dur_tabelasi_2'>
+    <model name='hiz_limit_1'>
       <static>1</static>
-      <pose>-0.0000 29.7000 0 0 0 6.28319</pose>
-      <link name='link'>
-        <visual name='v'>
-          <cast_shadows>false</cast_shadows>
-          <geometry>
-            <mesh>
-              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
-              <scale>2.5 2.5 2.5</scale>
-            </mesh>
-          </geometry>
-          <material>
-            <script>
-              <uri>model://stop_sign/materials/scripts</uri>
-              <uri>model://stop_sign/materials/textures</uri>
-              <name>StopSign/Diffuse</name>
-            </script>
-          </material>
-        </visual>
-      </link>
-    </model>
-    <model name='hiz_limit_gorsel'>
-      <static>1</static>
-      <pose>-35.9005 29.1080 0 0 0 6.48319</pose>
+      <pose>6.0000 -29.7000 0 0 0 -1.57080</pose>
       <link name='link'>
         <visual name='v'>
           <cast_shadows>false</cast_shadows>
@@ -10745,6 +10723,131 @@
               <scale>1.0 1.0 1.0</scale>
             </mesh>
           </geometry>
+        </visual>
+      </link>
+    </model>
+    <model name='dur_viraj1_once'>
+      <static>1</static>
+      <pose>22.0000 -29.7000 0 0 0 -1.57080</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='dur_ust_duz_1'>
+      <static>1</static>
+      <pose>18.0000 29.7000 0 0 0 1.57080</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='hiz_limit_2'>
+      <static>1</static>
+      <pose>-0.0000 29.7000 0 0 0 1.57080</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://speed_limit_sign/meshes/speed_limit_sign.dae</uri>
+              <scale>1.0 1.0 1.0</scale>
+            </mesh>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+    <model name='dur_ust_duz_2'>
+      <static>1</static>
+      <pose>-12.0000 29.7000 0 0 0 1.57080</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='dur_viraj2_once'>
+      <static>1</static>
+      <pose>-26.0000 29.7000 0 0 0 1.57080</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name='dur_tur_kapanis'>
+      <static>1</static>
+      <pose>-54.9917 -16.0470 0 0 0 3.71239</pose>
+      <link name='link'>
+        <visual name='v'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <mesh>
+              <uri>model://stop_sign/meshes/stop_sign.dae</uri>
+              <scale>2.5 2.5 2.5</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <script>
+              <uri>model://stop_sign/materials/scripts</uri>
+              <uri>model://stop_sign/materials/textures</uri>
+              <name>StopSign/Diffuse</name>
+            </script>
+          </material>
         </visual>
       </link>
     </model>
