@@ -33,6 +33,16 @@
       </ode>
     </physics>
 
+    <!-- gazebo_ros_state bir WorldPlugin'dir: gzserver'a -s ile
+         verilirse "incorrect plugin type" hatasiyla SESSIZCE basarisiz
+         olur ve /gazebo/set_entity_state servisi hic olusmaz. Dunya
+         dosyasinin icinde tanimlanmak zorunda. (Trafik araclarini
+         script'le hareket ettirmek bu servise bagli.) -->
+    <plugin name='gazebo_ros_state' filename='libgazebo_ros_state.so'>
+      <ros><namespace>/gazebo</namespace></ros>
+      <update_rate>50.0</update_rate>
+    </plugin>
+
     <scene>
       <ambient>0.6 0.6 0.6 1</ambient>
       <background>0.7 0.8 0.9 1</background>

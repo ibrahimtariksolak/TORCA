@@ -20,7 +20,8 @@ from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             RegisterEventHandler, SetEnvironmentVariable)
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit, OnProcessStart
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import (Command, LaunchConfiguration,
+                                  PythonExpression)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -49,6 +50,12 @@ def generate_launch_description():
     guvenlik_arg = DeclareLaunchArgument(
         'guvenlik', default_value='true',
         description='LiDAR tabanli acil fren katmani aktif mi')
+    # Trafik dugumu yalnizca dunyada trafik_N modelleri varsa anlamli;
+    # bos pistte acilirsa set_entity_state cagrilari bos yere doner.
+    trafik_arg = DeclareLaunchArgument(
+        'trafik', default_value='0',
+        description='kac hareketli trafik araci surulsun (dunyada ayni '
+                    'sayida trafik_N modeli olmali)')
 
     world = LaunchConfiguration('world')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -73,10 +80,12 @@ def generate_launch_description():
         os.environ.get('GAZEBO_MODEL_PATH', ''))
 
     gzserver = ExecuteProcess(
+        # libgazebo_ros_state.so BURADA OLMAMALI: o bir WorldPlugin'dir,
+        # -s ile verilince "incorrect plugin type" ile sessizce dusuyor.
+        # Dunya dosyasinin icinde tanimli (bkz. generate_otoban.py).
         cmd=['gzserver', '--verbose',
              '-s', 'libgazebo_ros_init.so',
              '-s', 'libgazebo_ros_factory.so',
-             '-s', 'libgazebo_ros_state.so',
              world],
         output='screen')
 
@@ -156,6 +165,16 @@ def generate_launch_description():
         parameters=[params_yaml, {'use_sim_time': use_sim_time}],
         condition=IfCondition(guvenlik))
 
+    # trafik:=0 (varsayilan) ise dugum hic baslatilmaz
+    trafik_node = Node(
+        package='perception_pkg', executable='trafik',
+        name='trafik', output='screen',
+        parameters=[params_yaml,
+                    {'use_sim_time': use_sim_time,
+                     'arac_sayisi': LaunchConfiguration('trafik')}],
+        condition=IfCondition(
+            PythonExpression(['"', LaunchConfiguration('trafik'), '" != "0"'])))
+
     rviz_config = os.path.join(pkg_share, 'config', 'otonom.rviz')
     rviz = Node(
         package='rviz2', executable='rviz2', name='rviz2', output='screen',
@@ -165,7 +184,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         world_arg, gui_arg, rviz_arg, sim_time_arg, algilama_arg,
-        guvenlik_arg,
+        guvenlik_arg, trafik_arg,
         model_path,
         gzserver,
         gzclient,
@@ -179,5 +198,6 @@ def generate_launch_description():
         RegisterEventHandler(OnProcessExit(
             target_action=spawn,
             on_exit=[sign_detector, serit_takip_guvenlikli,
-                     serit_takip_direkt, guvenlik_node, rviz])),
+                     serit_takip_direkt, guvenlik_node, trafik_node,
+                     rviz])),
     ])

@@ -414,9 +414,104 @@ def engel(ad, s, ofset, duz, yaricap,
 """
 
 
+def yaya_gecidi(ad, s, duz, yaricap, serit, serit_sayisi=7,
+                serit_en=0.45, bosluk=0.45):
+    """Yola zebra seritleri cizer (yaya gecidi).
+
+    Seritler yol eksenine DIK degil, araç yonune paralel uzanan beyaz
+    bantlardir (Avrupa tipi). Serit takip algoritmasini yanilmamalari
+    icin yolun sadece orta bolumunu kaplarlar, kenar cizgilerine
+    degmezler.
+    """
+    parcalar = []
+    toplam_en = serit_sayisi * serit_en + (serit_sayisi - 1) * bosluk
+    for i in range(serit_sayisi):
+        # yanal konum: gecidin ortasindan disa dogru
+        yan = -toplam_en / 2 + i * (serit_en + bosluk) + serit_en / 2
+        x, y, teta = ofset_nokta(s, yan, duz, yaricap)
+        parcalar.append(visual(f'z{i}', (x, y, CIZGI_Z, teta),
+                               (serit_en, 3.0, 0.01), BEYAZ))
+    return f"""    <model name='{ad}'>
+      <static>1</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name='link'>
+{''.join(parcalar)}      </link>
+    </model>
+"""
+
+
+def trafik_araci(ad, renk, s, ofset, duz, yaricap,
+                 uzun=4.0, en=1.8, yuk=1.4):
+    """Hareketli trafik araci: statik DEGIL, carpisma govdesi var.
+
+    Konumu perception_pkg/trafik.py dugumu /gazebo/set_entity_state ile
+    her karede gunceller. Statik olmadigi icin LiDAR onu goruyor ve
+    guvenlik katmani dogal olarak tepki veriyor.
+
+    Kutle yuksek ve atalet buyuk secildi: set_entity_state ile
+    tasindiklari icin fizik onlari surukleyemesin.
+
+    `s` OFSET HAT yay uzunlugudur (orta hat degil); trafik.py de ayni
+    parametrelemeyi kullaniyor, boylece baslangic pozu ile calisma
+    zamani pozu ayni noktaya denk geliyor.
+    """
+    x, y, teta = ofset_hat_nokta(s, ofset, duz, yaricap)
+    r, g, b = renk
+    return f"""    <model name='{ad}'>
+      <static>0</static>
+      <pose>{x:.4f} {y:.4f} {yuk/2:.3f} 0 0 {teta:.5f}</pose>
+      <link name='govde'>
+        <inertial>
+          <mass>1500.0</mass>
+          <inertia>
+            <ixx>800</ixx><iyy>2200</iyy><izz>2500</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name='c'>
+          <geometry>
+            <box><size>{uzun:.2f} {en:.2f} {yuk:.2f}</size></box>
+          </geometry>
+        </collision>
+        <visual name='v'>
+          <geometry>
+            <box><size>{uzun:.2f} {en:.2f} {yuk:.2f}</size></box>
+          </geometry>
+          <material>
+            <ambient>{r*0.6:.2f} {g*0.6:.2f} {b*0.6:.2f} 1</ambient>
+            <diffuse>{r:.2f} {g:.2f} {b:.2f} 1</diffuse>
+          </material>
+        </visual>
+        <visual name='cam'>
+          <pose>-0.3 0 {yuk*0.33:.2f} 0 0 0</pose>
+          <geometry>
+            <box><size>{uzun*0.42:.2f} {en*0.92:.2f} {yuk*0.42:.2f}</size></box>
+          </geometry>
+          <material>
+            <ambient>0.1 0.12 0.16 1</ambient>
+            <diffuse>0.15 0.18 0.24 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+"""
+
+
+# Trafik araclari icin ayirt edici renkler (sunumda net gorunsun)
+TRAFIK_RENKLERI = [
+    (0.85, 0.15, 0.15),   # kirmizi
+    (0.15, 0.55, 0.85),   # mavi
+    (0.95, 0.75, 0.10),   # sari
+    (0.20, 0.70, 0.30),   # yesil
+    (0.85, 0.45, 0.10),   # turuncu
+    (0.60, 0.25, 0.75),   # mor
+]
+
+
 def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
                serit=SERIT_GENISLIK, golgeler=False, bariyerli=True,
-               engel_s=None):
+               engel_s=None, yaya_s=None, trafik_sayisi=0,
+               trafik_bas_s=60.0):
     kenar = serit                       # orta hattan kenar cizgisine
     yarim_yol = serit + YOL_PAYI        # asfalt yarim genisligi
 
@@ -515,6 +610,25 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
     if engel_s is not None:
         parcalar.append(engel('engel', engel_s, -serit / 2.0, duz, yaricap))
 
+    # --- yaya gecidi (zebra seritleri)
+    if yaya_s is not None:
+        parcalar.append(yaya_gecidi('yaya_gecidi', yaya_s, duz, yaricap,
+                                    serit))
+
+    # --- trafik araclari: sag seridin ortasinda, esit aralikli.
+    # Konumlarini calisma zamaninda perception_pkg/trafik.py guncelliyor;
+    # buradaki pozlar yalnizca baslangic yerlesimi.
+    if trafik_sayisi > 0:
+        t_ofset = -serit / 2.0
+        hat = ofset_hat_uzunluk(t_ofset, duz, yaricap)
+        aralik = hat / trafik_sayisi
+        for i in range(trafik_sayisi):
+            renk = TRAFIK_RENKLERI[i % len(TRAFIK_RENKLERI)]
+            parcalar.append(trafik_araci(
+                f'trafik_{i+1}', renk,
+                (trafik_bas_s + i * aralik) % hat,
+                t_ofset, duz, yaricap))
+
     golge = '1' if golgeler else '0'
 
     # Acilis kamerasi: tum ovali cerceveleyecek sekilde pistin guney-
@@ -566,6 +680,16 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
         </constraints>
       </ode>
     </physics>
+
+    <!-- gazebo_ros_state bir WorldPlugin'dir: gzserver'a -s ile
+         verilirse "incorrect plugin type" hatasiyla SESSIZCE basarisiz
+         olur ve /gazebo/set_entity_state servisi hic olusmaz. Dunya
+         dosyasinin icinde tanimlanmak zorunda. (Trafik araclarini
+         script'le hareket ettirmek bu servise bagli.) -->
+    <plugin name='gazebo_ros_state' filename='libgazebo_ros_state.so'>
+      <ros><namespace>/gazebo</namespace></ros>
+      <update_rate>50.0</update_rate>
+    </plugin>
 
     <scene>
       <ambient>0.6 0.6 0.6 1</ambient>
@@ -653,11 +777,19 @@ def main():
     p.add_argument('--engel-s', type=float, default=None,
                    help='pistin bu s metresine (orta hat uzunlugu boyunca) '
                         'bir engel koy; LiDAR acil fren testi icin')
+    p.add_argument('--yaya-s', type=float, default=None,
+                   help='bu s metresine yaya gecidi (zebra) ciz')
+    p.add_argument('--trafik', type=int, default=0,
+                   help='pistte kac hareketli trafik araci olsun '
+                        '(perception_pkg trafik dugumu surer)')
+    p.add_argument('--trafik-bas-s', type=float, default=60.0,
+                   help='ilk trafik aracinin baslangic s degeri')
     a = p.parse_args()
 
     sdf = dunya_uret(duz=a.duz, yaricap=a.yaricap, serit=a.serit,
                      golgeler=a.golgeler, bariyerli=not a.bariyersiz,
-                     engel_s=a.engel_s)
+                     engel_s=a.engel_s, yaya_s=a.yaya_s,
+                     trafik_sayisi=a.trafik, trafik_bas_s=a.trafik_bas_s)
 
     with open(a.cikti, 'w') as f:
         f.write(sdf)

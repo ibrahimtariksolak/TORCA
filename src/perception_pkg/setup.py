@@ -14,8 +14,12 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'),
             glob(os.path.join('launch', '*.py'))),
+        # .world dosyalarinin yani sira ureteci de kuruluyor: trafik
+        # dugumu pist geometrisini (ofset_hat_nokta vb.) bu modulden
+        # okuyor, dolayisiyla calisma zamaninda erisilebilir olmali.
         (os.path.join('share', package_name, 'worlds'),
-            glob(os.path.join('worlds', '*.world'))),
+            glob(os.path.join('worlds', '*.world'))
+            + glob(os.path.join('worlds', '*.py'))),
         (os.path.join('share', package_name, 'models'),
             glob(os.path.join('models', '*.sdf'))),
         (os.path.join('share', package_name, 'urdf'),
@@ -39,6 +43,7 @@ setup(
             'sign_detector = perception_pkg.sign_detector:main',
             'serit_takip   = perception_pkg.serit_takip:main',
             'guvenlik      = perception_pkg.guvenlik:main',
+            'trafik        = perception_pkg.trafik:main',
         ],
     },
 )
