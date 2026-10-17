@@ -115,6 +115,8 @@ class SeritTakip(Node):
         self.cmd_pub.publish(Twist())
 
         self.arac_hiz = 0.0
+        self.yaya_biter = 0.0
+        self.yaya_sayac = 0
         self.get_logger().info('Serit takip basladi (IPM + saf takip)')
 
     # ================= sabitler =================
@@ -123,6 +125,10 @@ class SeritTakip(Node):
     TABELA_BEKLEME = 8.0
     KAYIP_YAVASLA = 5          # kac kare sonra yavaslamaya basla
     KAYIP_DUR = 45             # kac kare sonra tamamen dur
+    YAYA_ESIK = 0.13           # serit ici beyaz orani
+    YAYA_ONAY = 2              # kac ardisik kare gerekli (transient'i ele)
+    YAYA_HIZ = 2.0             # yaya gecidinde hiz limiti (m/s)
+    YAYA_SURE = 4.0            # yavaslamanin suresi (s)
 
     # ================= yardimcilar =================
     def _simdi(self):
@@ -144,6 +150,27 @@ class SeritTakip(Node):
     def _komut_ver(self, komut, sure):
         self.mevcut_komut = komut
         self.komut_biter = self._simdi() + sure
+
+    def _yaya_gecidi_orani(self, kb_beyaz):
+        """Serit ICINDEKI (kenarlar haric) beyaz piksel orani.
+
+        Zebra bantlari serit icini doldurur; normal yolda bu bolge
+        asfalt (karanlik). Oran yuksekse yaya gecidi var demektir.
+
+        ROI: yanal olarak kenar cizgilerinin icinde (y in [-1.1, +1.1]),
+        ileri olarak 6-14 m penceresi.
+        """
+        y_sol = int(self.ipm.y_to_kb_sutun(+1.1))
+        y_sag = int(self.ipm.y_to_kb_sutun(-1.1))
+        y_sol, y_sag = max(0, min(y_sol, y_sag)), min(kb_beyaz.shape[1],
+                                                      max(y_sol, y_sag))
+        x_yakin = int((self.ipm.x_max - 6.0) / self.ipm.cozunurluk)
+        x_uzak = int((self.ipm.x_max - 14.0) / self.ipm.cozunurluk)
+        r0, r1 = max(0, x_uzak), min(kb_beyaz.shape[0], x_yakin)
+        if r1 - r0 < 2 or y_sag - y_sol < 2:
+            return 0.0
+        roi = kb_beyaz[r0:r1, y_sol:y_sag]
+        return float((roi > 0).mean())
 
     def odom_cb(self, msg):
         v = msg.twist.twist.linear
@@ -389,6 +416,25 @@ class SeritTakip(Node):
         beyaz, sari = self._maskeler(kare)
         kb_beyaz = self.ipm.cevir(beyaz)
         kb_sari = self.ipm.cevir(sari)
+
+        # ---- yaya gecidi: serit icinde beyaz blok ----
+        # Tek kotu kare (orn. virajda kenar cizgisinin ROI'ye girmesi)
+        # yanlis tetiklemesin diye YAYA_ONAY kadar ardisik kare sart.
+        yaya_oran = self._yaya_gecidi_orani(kb_beyaz)
+        if yaya_oran > self.YAYA_ESIK:
+            self.yaya_sayac += 1
+        else:
+            self.yaya_sayac = 0
+        if (self.yaya_sayac >= self.YAYA_ONAY
+                and self._tetiklenebilir('yaya_gecidi')):
+            self.hiz_limiti = self.YAYA_HIZ
+            self.yaya_biter = self._simdi() + self.YAYA_SURE
+            self.get_logger().info(
+                f'YAYA GECIDI! oran={yaya_oran:.2f}, yavasladi')
+        # yaya gecidi hiz kisitlamasi suresi dolunca normale don
+        if self.hiz_limiti == self.YAYA_HIZ and self._simdi() > self.yaya_biter:
+            self.hiz_limiti = self.hiz_duz
+
         merkez, b_nokta, s_nokta = self._serit_merkezi(kb_beyaz, kb_sari)
 
         # ---- serit kaybi ----
@@ -425,7 +471,7 @@ class SeritTakip(Node):
 
         self._debug(kare, kb_beyaz, kb_sari, b_nokta, s_nokta,
                     f'v={hedef_hiz:.1f} d={math.degrees(delta):+.1f}deg '
-                    f'Ld={Ld:.1f} egri={self.suzulmus_egri:+.4f}',
+                    f'yaya={yaya_oran:.2f}',
                     merkez, hedef)
 
     # ================= hata ayiklama goruntusu =================

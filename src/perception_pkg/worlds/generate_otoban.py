@@ -414,23 +414,36 @@ def engel(ad, s, ofset, duz, yaricap,
 """
 
 
-def yaya_gecidi(ad, s, duz, yaricap, serit, serit_sayisi=7,
-                serit_en=0.45, bosluk=0.45):
+def yaya_gecidi(ad, s_merkez, duz, yaricap, serit,
+                serit_en=0.45, bosluk=0.22, uzunluk=4.5):
     """Yola zebra seritleri cizer (yaya gecidi).
 
-    Seritler yol eksenine DIK degil, araç yonune paralel uzanan beyaz
-    bantlardir (Avrupa tipi). Serit takip algoritmasini yanilmamalari
-    icin yolun sadece orta bolumunu kaplarlar, kenar cizgilerine
-    degmezler.
+    Standart zebra: beyaz bantlar araç YONUNE PARALEL uzanir (her biri
+    `uzunluk` m) ve yol boyunca YANAL olarak dizilir. Surucu yaklasirken
+    bir dizi beyaz cubuk gorur.
+
+    Bantlar sag seridin genisligini kaplar ama kenar cizgilerine
+    degmez. s_merkez gecidin orta hat uzerindeki konumu; bantlar bunun
+    etrafina `uzunluk`/2 kadar yayilir.
     """
     parcalar = []
-    toplam_en = serit_sayisi * serit_en + (serit_sayisi - 1) * bosluk
-    for i in range(serit_sayisi):
-        # yanal konum: gecidin ortasindan disa dogru
-        yan = -toplam_en / 2 + i * (serit_en + bosluk) + serit_en / 2
-        x, y, teta = ofset_nokta(s, yan, duz, yaricap)
-        parcalar.append(visual(f'z{i}', (x, y, CIZGI_Z, teta),
-                               (serit_en, 3.0, 0.01), BEYAZ))
+    # Sag serit: orta hattan -serit'e kadar. Zebra bu bandi doldursun.
+    # Kenar cizgilerine degmemesi icin kucuk pay birak.
+    ic = -0.08 * serit           # orta cizgiye yakin kenar
+    dis = -0.94 * serit          # dis kenar cizgisine yakin
+    n = max(2, int(abs(dis - ic) / (serit_en + bosluk)))
+    idx = 0
+    for i in range(n):
+        yan = ic + (i + 0.5) * (dis - ic) / n
+        # Her bant, travel yonunde `uzunluk` m: kus bakisinda net blok
+        alt_n = max(1, int(round(uzunluk / YOL_ADIM)))
+        for j in range(alt_n):
+            ds = uzunluk / alt_n
+            s = s_merkez - uzunluk / 2 + (j + 0.5) * ds
+            x, y, teta = ofset_nokta(s, yan, duz, yaricap)
+            parcalar.append(visual(f'z{idx}', (x, y, CIZGI_Z, teta),
+                                   (ds * 1.05, serit_en, 0.01), BEYAZ))
+            idx += 1
     return f"""    <model name='{ad}'>
       <static>1</static>
       <pose>0 0 0 0 0 0</pose>
