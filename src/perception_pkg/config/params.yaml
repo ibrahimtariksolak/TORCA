@@ -88,3 +88,10 @@ guvenlik:
 
     aktif: true
     log_hz: 2.0
+
+    # Engelden kacinma: engel seritteyse ve sol serit bossa dur yerine
+    # yanindan gec. Kapaliysa katman sadece frenler (eski davranis).
+    kacinma_aktif: true
+    kacinma_mesafe: 14.0     # engele bu kadar kala kacinma karari
+    kacinma_ofset: 2.8       # sola kayma miktari (m); arac+engel genisligi
+    serit_genislik: 3.5      # sol serit bosluk kontrolu icin

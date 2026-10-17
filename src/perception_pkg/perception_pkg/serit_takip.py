@@ -39,7 +39,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
+from std_msgs.msg import Float64, String
 
 from perception_pkg.ipm import IPM
 
@@ -102,6 +102,11 @@ class SeritTakip(Node):
                                  self.goruntu_cb, kamera_qos)
         self.create_subscription(String, '/detected_sign', self.tabela_cb, 10)
         self.create_subscription(Odometry, '/arac/odom', self.odom_cb, 10)
+        # Engelden kacinma yanal ofseti: guvenlik dugumu sol seridin bos
+        # oldugunu dogrulayinca buraya pozitif bir deger yolluyor, araç
+        # o kadar sola kayiyor (bkz. _saf_takip).
+        self.create_subscription(Float64, '/arac/kacinma_ofset',
+                                 self.ofset_cb, 10)
         # Cikis /arac/cmd_vel_cmd'ye gidiyor; guvenlik dugumu (varsa)
         # bunu /arac/cmd_vel'e filtreleyerek yayinliyor. guvenlik dugumu
         # kapaliysa launch bir remap koyarak cmd_vel_cmd'yi dogrudan
@@ -117,7 +122,11 @@ class SeritTakip(Node):
         self.arac_hiz = 0.0
         self.yaya_biter = 0.0
         self.yaya_sayac = 0
+        self.kacinma_ofset = 0.0
         self.get_logger().info('Serit takip basladi (IPM + saf takip)')
+
+    def ofset_cb(self, msg):
+        self.kacinma_ofset = float(msg.data)
 
     # ================= sabitler =================
     DUR_SURESI = 3.0
@@ -369,12 +378,18 @@ class SeritTakip(Node):
             return 0.0, Ld, None
 
         X, Y = hedef
+        # Engelden kacinma: guvenlik katmani sol seridin bos oldugunu
+        # dogrulayinca yanal ofset komutu yolluyor. Hedef noktayi bu
+        # kadar sola (pozitif Y) kaydirinca araç seridin yanina gecip
+        # engeli siyiriyor. Ofset guvenlik tarafinda rampalaniyor.
+        Y = Y + self.kacinma_ofset
         mesafe = math.hypot(X, Y)
         if mesafe < 0.5:
-            return 0.0, Ld, hedef
+            return 0.0, Ld, (X, Y)
         alpha = math.atan2(Y, X)
         delta = math.atan2(2.0 * self.L * math.sin(alpha), mesafe)
-        return float(np.clip(delta, -self.maks_dir, self.maks_dir)), Ld, hedef
+        return (float(np.clip(delta, -self.maks_dir, self.maks_dir)),
+                Ld, (X, Y))
 
     @staticmethod
     def _egrilik(merkez):

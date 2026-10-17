@@ -21,9 +21,11 @@ import math
 import numpy as np
 import rclpy
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Float64
 
 
 class Guvenlik(Node):
@@ -45,6 +47,12 @@ class Guvenlik(Node):
         self.declare_parameter('fren_ivme', 2.0)         # m/s^2, olculdu
         self.declare_parameter('aktif', True)
         self.declare_parameter('log_hz', 2.0)
+        # Engelden kacinma: engel seritteyse ve sol serit bossa dur
+        # yerine yanindan gec. Kapaliysa katman sadece frenler.
+        self.declare_parameter('kacinma_aktif', True)
+        self.declare_parameter('kacinma_mesafe', 14.0)   # bu kadar kala karar
+        self.declare_parameter('kacinma_ofset', 2.8)     # sola kayma (m)
+        self.declare_parameter('serit_genislik', 3.5)
 
         g = self.get_parameter
         self.yari_w = g('koridor_yari_genislik').value
@@ -60,16 +68,34 @@ class Guvenlik(Node):
         self.declare_parameter('dingil_mesafe', 2.5)
         self.dingil = self.get_parameter('dingil_mesafe').value
 
+        self.kacinma_aktif = g('kacinma_aktif').value
+        self.d_kacinma = g('kacinma_mesafe').value
+        self.ofset_hedef = g('kacinma_ofset').value
+        self.serit_w = g('serit_genislik').value
+
         self.en_yakin = float('inf')      # koridor icindeki en yakin donus
+        self.sol_bos = True               # sol serit bos mu
         self.son_direksiyon = 0.0         # son komut edilen direksiyon acisi
         self.scan_zamani = 0.0
         self.scan_bayat_esigi = 0.5        # 500 ms'den eski scan guvenilmez
+
+        # Kacinma durum makinesi: 'yok' -> 'kaciniyor' -> 'donuyor' -> 'yok'
+        self.kacinma_durum = 'yok'
+        self.ofset = 0.0                  # mevcut yanal ofset (rampali)
+        self.kat_edilen = 0.0             # odom'dan entegre mesafe
+        self.onceki_poz = None
+        self.kacinma_bitis_mesafe = 0.0   # bu mesafede donuse basla
 
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
                          history=HistoryPolicy.KEEP_LAST)
         self.create_subscription(LaserScan, '/arac/scan', self.scan_cb, qos)
         self.create_subscription(Twist, '/arac/cmd_vel_cmd', self.cmd_cb, 10)
+        self.create_subscription(Odometry, '/arac/odom', self.odom_cb, 10)
         self.pub = self.create_publisher(Twist, '/arac/cmd_vel', 10)
+        self.ofset_pub = self.create_publisher(Float64, '/arac/kacinma_ofset',
+                                               10)
+        # Ofset rampasi ve durum makinesi sabit hizda donsun diye timer
+        self.create_timer(0.05, self.kacinma_dongusu)
 
         self.get_logger().info(
             f'Guvenlik katmani basladi | aktif={self.aktif} | '
@@ -105,6 +131,13 @@ class Guvenlik(Node):
 
         x = menz * np.cos(acilar)
         y = menz * np.sin(acilar)
+
+        # Sol serit bos mu? Araç sag seritte; sol serit +y tarafinda.
+        # Bolge: y in [+1.0, +serit+1.5], ileri x in [-2, d_kacinma+6].
+        # Bir sey varsa (ornek karsi yondeki trafik) kacinma guvensiz.
+        sol_bolge = (gecerli & (y > 1.0) & (y < self.serit_w + 1.5)
+                     & (x > -2.0) & (x < self.d_kacinma + 6.0))
+        self.sol_bos = not bool(np.any(sol_bolge))
 
         delta = self.son_direksiyon
         if abs(delta) < 0.02:
@@ -154,10 +187,17 @@ class Guvenlik(Node):
             self._not('scan bayat', scan_yasi)
             return
 
-        d = self.en_yakin
         cikis = Twist()
         cikis.angular.z = msg.angular.z
 
+        # Kacinma manevrasi sirasinda frenleme; araç engeli solundan
+        # siyirarak geciyor. Sadece hizi guvenli bir degere kirp.
+        if self.kacinma_durum in ('kaciniyor', 'donuyor'):
+            cikis.linear.x = min(msg.linear.x, 3.0)
+            self.pub.publish(cikis)
+            return
+
+        d = self.en_yakin
         if d <= self.d_fren_min:
             cikis.linear.x = 0.0
             self._not('ACIL FREN', d)
@@ -173,6 +213,58 @@ class Guvenlik(Node):
             cikis.linear.x = msg.linear.x
 
         self.pub.publish(cikis)
+
+    def odom_cb(self, msg):
+        """Kat edilen mesafeyi entegre et (kacinma manevra uzunlugu icin)."""
+        p = msg.pose.pose.position
+        if self.onceki_poz is not None:
+            self.kat_edilen += math.hypot(p.x - self.onceki_poz[0],
+                                          p.y - self.onceki_poz[1])
+        self.onceki_poz = (p.x, p.y)
+
+    def kacinma_dongusu(self):
+        """Engelden kacinma durum makinesi ve yanal ofset rampasi.
+
+        yok -> (engel yakin & sol bos) -> kaciniyor -> (engel gecildi)
+            -> donuyor -> (ofset sifir) -> yok
+
+        Erken donusu onlemek icin 'gecildi' karari LiDAR'a degil kat
+        edilen mesafeye dayaniyor: araç sola kayinca engel yay
+        koridorundan cikip en_yakin=inf oluyor, LiDAR'a bakilsaydi araç
+        hemen saga donup engele carpardi.
+        """
+        RAMPA = 0.08          # her 0.05 s'de ofset degisimi (m)
+        yayinla = Float64()
+
+        if not (self.aktif and self.kacinma_aktif):
+            yayinla.data = 0.0
+            self.ofset_pub.publish(yayinla)
+            return
+
+        if self.kacinma_durum == 'yok':
+            if (self.en_yakin <= self.d_kacinma and self.sol_bos
+                    and self.onceki_poz is not None):
+                self.kacinma_durum = 'kaciniyor'
+                # engeli gecmek icin gereken yol: mevcut mesafe + engel
+                # uzakligi + arac/engel boyu payi
+                self.kacinma_bitis_mesafe = (self.kat_edilen
+                                             + self.en_yakin + 8.0)
+                self.get_logger().warn(
+                    f'KACINMA basladi | engel {self.en_yakin:.1f} m, '
+                    f'sol serit bos')
+        elif self.kacinma_durum == 'kaciniyor':
+            self.ofset = min(self.ofset_hedef, self.ofset + RAMPA)
+            if self.kat_edilen >= self.kacinma_bitis_mesafe:
+                self.kacinma_durum = 'donuyor'
+                self.get_logger().warn('KACINMA: engel gecildi, seride donuluyor')
+        elif self.kacinma_durum == 'donuyor':
+            self.ofset = max(0.0, self.ofset - RAMPA)
+            if self.ofset <= 0.01:
+                self.ofset = 0.0
+                self.kacinma_durum = 'yok'
+
+        yayinla.data = self.ofset
+        self.ofset_pub.publish(yayinla)
 
     def _not(self, etiket, deger):
         simdi = self._simdi()
