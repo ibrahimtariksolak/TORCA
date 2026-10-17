@@ -120,9 +120,14 @@ class SeritTakip(Node):
         self.cmd_pub.publish(Twist())
 
         self.arac_hiz = 0.0
+        self.arac_yaw = 0.0
         self.yaya_biter = 0.0
         self.yaya_sayac = 0
         self.kacinma_ofset = 0.0
+        # Sagdon manevrasi durum degiskenleri
+        self.sagdon_faz = 0            # 0 = aktif degil
+        self.sagdon_hedef_yaw = 0.0
+        self.sagdon_faz_bas = 0.0      # faz basladigi an (fallback icin)
         self.get_logger().info('Serit takip basladi (IPM + saf takip)')
 
     def ofset_cb(self, msg):
@@ -138,6 +143,17 @@ class SeritTakip(Node):
     YAYA_ONAY = 2              # kac ardisik kare gerekli (transient'i ele)
     YAYA_HIZ = 2.0             # yaya gecidinde hiz limiti (m/s)
     YAYA_SURE = 4.0            # yavaslamanin suresi (s)
+
+    # Sagdon manevrasi: Turn right ahead tabelasina tepki.
+    # Toplam 360 derece dagilimla U-donusu: 90 + 180 + 90.
+    # Araç orijinal yonune doner, pistin ~15 m ilerisine yakin kalir.
+    # Her 'donus' fazi hedef yaw'a ulasana kadar sabit sag direksiyon,
+    # her 'duz' fazi sabit sure boyunca direksiyon sifir.
+    SAGDON_DIR = -0.5          # sabit direksiyon acisi (rad, negatif = sag)
+    SAGDON_HIZ = 2.0           # manevra sirasindaki hiz (m/s)
+    SAGDON_DUZ_SURE = 2.0      # fazlar arasi duz gidis suresi (s)
+    SAGDON_YAW_TOL = 0.08      # hedef yaw'a yaklasim toleransi (rad, ~5°)
+    SAGDON_FAZ_MAKS = 10.0     # tek fazin azami suresi (fallback / takilma)
 
     # ================= yardimcilar =================
     def _simdi(self):
@@ -159,6 +175,59 @@ class SeritTakip(Node):
     def _komut_ver(self, komut, sure):
         self.mevcut_komut = komut
         self.komut_biter = self._simdi() + sure
+
+    @staticmethod
+    def _yaw_mod(a):
+        """Yaw'i [-pi, pi) araligina indirger."""
+        return (a + math.pi) % (2 * math.pi) - math.pi
+
+    def _sagdon_tick(self):
+        """Sagdon manevrasinin bir adimini uretir -> (hiz, direksiyon).
+
+        Fazlar (hep sag direksiyon):
+            1: 90° sag  -> hedef = baslangic - 90°
+            2: 2 s duz
+            3: 180° sag -> hedef = fazbasi - 180°
+            4: 2 s duz
+            5: 90° sag  -> hedef = fazbasi - 90°
+            6: bitti, serit takibine don
+
+        Her donus fazi hedef yaw'a tolerans icinde yaklasana kadar
+        suruyor, SAGDON_FAZ_MAKS sinirini asarsa fallback olarak faz
+        geciyor (araç takilmasin).
+        """
+        simdi = self._simdi()
+        gecen = simdi - self.sagdon_faz_bas
+
+        if self.sagdon_faz in (1, 3, 5):
+            # Donus fazi
+            yaw_fark = abs(self._yaw_mod(
+                self.arac_yaw - self.sagdon_hedef_yaw))
+            if yaw_fark < self.SAGDON_YAW_TOL or gecen > self.SAGDON_FAZ_MAKS:
+                self.sagdon_faz += 1
+                self.sagdon_faz_bas = simdi
+                return self._sagdon_tick()
+            return self.SAGDON_HIZ, self.SAGDON_DIR
+
+        if self.sagdon_faz in (2, 4):
+            # Duz git fazi
+            if gecen >= self.SAGDON_DUZ_SURE:
+                self.sagdon_faz += 1
+                self.sagdon_faz_bas = simdi
+                # Bir sonraki donus fazi icin yeni hedef:
+                #   faz 3 -> 180° (toplam -270° orijinalden)
+                #   faz 5 ->  90° (toplam -360° orijinalden)
+                donus = (math.pi if self.sagdon_faz == 3
+                         else math.pi / 2.0)
+                self.sagdon_hedef_yaw = self._yaw_mod(
+                    self.arac_yaw - donus)
+                return self._sagdon_tick()
+            return self.SAGDON_HIZ, 0.0
+
+        # Faz 6: manevra tamam
+        self.sagdon_faz = 0
+        self.get_logger().info('SAGA DON manevra tamam, serit takibine don')
+        return None
 
     def _yaya_gecidi_orani(self, kb_beyaz):
         """Serit ICINDEKI (kenarlar haric) beyaz piksel orani.
@@ -184,6 +253,11 @@ class SeritTakip(Node):
     def odom_cb(self, msg):
         v = msg.twist.twist.linear
         self.arac_hiz = math.hypot(v.x, v.y)
+        # yaw: sagdon_manevra fazlari odometriden izleniyor
+        q = msg.pose.pose.orientation
+        self.arac_yaw = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
     def tabela_cb(self, msg):
         d = msg.data
@@ -202,6 +276,19 @@ class SeritTakip(Node):
         elif 'Speed Limit 20' in d and self._tetiklenebilir('hiz20'):
             self.hiz_limiti = 2.5
             self.get_logger().info('HIZ 20')
+        elif ('Turn right ahead' in d
+              and self._tetiklenebilir('sagdon')
+              and self.sagdon_faz == 0):
+            # Scripted 360° U-donusu baslat: 90° sag + duz + 180° sag +
+            # duz + 90° sag -> arac orijinal yonunde, ileride ana yola
+            # yakin kalir. Mevcut yaw baslangic alinir.
+            self.sagdon_faz = 1
+            self.sagdon_hedef_yaw = self._yaw_mod(
+                self.arac_yaw - math.pi / 2.0)
+            self.sagdon_faz_bas = self._simdi()
+            self.get_logger().info(
+                f'SAGA DON manevra basladi, hedef yaw '
+                f'{math.degrees(self.sagdon_hedef_yaw):.0f}°')
         elif 'Speed Limit 30' in d and self._tetiklenebilir('hiz30'):
             self.hiz_limiti = self.hiz_duz
             self.get_logger().info('HIZ 30')
@@ -427,6 +514,19 @@ class SeritTakip(Node):
             self.cmd_pub.publish(twist)      # sifir = dur
             self._debug(kare, None, None, None, None, 'DUR')
             return
+
+        # ---- sagdon manevrasi aktifse: scripted U-donusu ----
+        if self.sagdon_faz > 0:
+            tick = self._sagdon_tick()
+            if tick is not None:
+                twist.linear.x = float(tick[0])
+                twist.angular.z = float(tick[1])
+                self.cmd_pub.publish(twist)
+                self._debug(kare, None, None, None, None,
+                            f'SAGDON faz={self.sagdon_faz} '
+                            f'yaw={math.degrees(self.arac_yaw):.0f}°')
+                return
+            # tick None -> manevra bitti, serit takibine devam et
 
         beyaz, sari = self._maskeler(kare)
         kb_beyaz = self.ipm.cevir(beyaz)

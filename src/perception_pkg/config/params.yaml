@@ -56,6 +56,9 @@ sign_detector:
       - Pedestrian Crossing
       - Speed Limit 20 KMPh
       - Speed Limit 30 KMPh
+      - Round-About
+      - Turn left ahead
+      - Turn right ahead
       - Dangerous Left Curve Ahead
       - Dangerous Rright Curve Ahead
       - Round-About
