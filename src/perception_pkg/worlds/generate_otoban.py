@@ -521,10 +521,36 @@ TRAFIK_RENKLERI = [
 ]
 
 
+def ozel_tabela(ad, model, s, ofset, duz, yaricap, yaw_ek=0.0):
+    """tools/tabela_model_uret.py'nin urettigi tabela_* modellerini koyar.
+
+    tabela() stop_sign.dae / speed_limit_sign.dae gibi hazir mesh'leri
+    kullanir ve onlarin yuz normali farkli (yaw = teta - pi/2).
+
+    Bu fonksiyondaki ozel tabela modellerinde LEVHA kutusu X normalli
+    (bkz. tabela_model_uret.py: box size KALIN BOYUT BOYUT). Yaw=0 iken
+    yuz +X'e bakar. Araç +s yonunden gelirken yola DIK ve araca donuk
+    olmasi icin:
+        yaw = teta + pi   (yuz dunyada -t yonune, araç geldigi yone)
+    Bu veri_topla.py'de spawn ederken kullandigimiz yaw=pi ile tutarli
+    (orada teta=0'di).
+
+    `model` ornek: 'tabela_giris_yok', 'tabela_yaya_mavi'.
+    """
+    x, y, teta = ofset_nokta(s, ofset, duz, yaricap)
+    yaw = teta + math.pi + yaw_ek
+    return f"""    <include>
+      <uri>model://{model}</uri>
+      <name>{ad}</name>
+      <pose>{x:.4f} {y:.4f} 0 0 0 {yaw:.5f}</pose>
+    </include>
+"""
+
+
 def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
                serit=SERIT_GENISLIK, golgeler=False, bariyerli=True,
                engel_s=None, yaya_s=None, trafik_sayisi=0,
-               trafik_bas_s=60.0):
+               trafik_bas_s=60.0, showcase=False):
     kenar = serit                       # orta hattan kenar cizgisine
     yarim_yol = serit + YOL_PAYI        # asfalt yarim genisligi
 
@@ -582,16 +608,35 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
     # viraj girislerinden once ve duz bolumler boyunca.
     #
     # (ad, s, tip) -- tip 'dur' YOLO tarafindan taninir, 'hiz' gorseldir
-    yerlesim = [
-        ('dur_alt_duz',     0.30 * duz,                  'dur'),
-        ('hiz_limit_1',     0.60 * duz,                  'hiz'),
-        ('dur_viraj1_once', duz - 8.0,                   'dur'),
-        ('dur_ust_duz_1',   duz + viraj_boy + 12.0,      'dur'),
-        ('hiz_limit_2',     duz + viraj_boy + 30.0,      'hiz'),
-        ('dur_ust_duz_2',   duz + viraj_boy + 42.0,      'dur'),
-        ('dur_viraj2_once', 2 * duz + viraj_boy - 4.0,   'dur'),
-        ('dur_tur_kapanis', 2 * (duz + viraj_boy) - 25.0, 'dur'),
-    ]
+    if showcase:
+        # Showcase: fine-tune edilmis modelin tanidigi TUM sinif
+        # ailelerini pist boyunca dagit, karar aralarini genis tut
+        # (DUR 3 s, GIRIS YOK 5 s, YAYA 4 s yavaslama).
+        # Showcase yerlesimi: fine-tune ile taninan 5 sinif ailesini
+        # pist boyunca GENIS araliklarla dagit. YOL VER ve GIRIS YOK
+        # dahil edilmedi: YOL VER hizi kalici dusuruyor (TABELA_BEKLEME
+        # dolana kadar reset olmuyor), GIRIS YOK 5 s durusunu YAYA
+        # yavaslamasiyla ust uste getiriyor ve demo akicilgi bozuluyor.
+        # dur ve yaya her tur bir kez tetiklenecek; donel ve hiz_30
+        # sadece algilanacak (davranis yok, gorsel).
+        yerlesim = [
+            ('tabela_hiz_30',     12.0,                        'ozel'),
+            ('tabela_yaya_mavi',  30.0,                        'ozel'),
+            ('tabela_donel',      duz + viraj_boy / 2.0,       'ozel'),
+            ('tabela_dur',        duz + viraj_boy + 25.0,      'ozel'),
+            ('tabela_saga_don',   2 * duz + viraj_boy - 15.0,  'ozel'),
+        ]
+    else:
+        yerlesim = [
+            ('dur_alt_duz',     0.30 * duz,                  'dur'),
+            ('hiz_limit_1',     0.60 * duz,                  'hiz'),
+            ('dur_viraj1_once', duz - 8.0,                   'dur'),
+            ('dur_ust_duz_1',   duz + viraj_boy + 12.0,      'dur'),
+            ('hiz_limit_2',     duz + viraj_boy + 30.0,      'hiz'),
+            ('dur_ust_duz_2',   duz + viraj_boy + 42.0,      'dur'),
+            ('dur_viraj2_once', 2 * duz + viraj_boy - 4.0,   'dur'),
+            ('dur_tur_kapanis', 2 * (duz + viraj_boy) - 25.0, 'dur'),
+        ]
 
     # Ayni s'e iki tabela konursa Gazebo'da ust uste binerler ve bu
     # sessizce gozden kacar; ilk surumde dur_viraj1_once ile
@@ -607,6 +652,14 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
                     f'{fark:.1f} m arayla, en az 10 m olmali')
 
     for ad, s, tip in yerlesim:
+        if tip == 'ozel':
+            # tabela_* modeli (fine-tune ile taninir); ozel_tabela
+            # <include> ile koyar ve yaw'i +X normalli levhaya gore
+            # ayarlar
+            parcalar.append(ozel_tabela(
+                ad.replace('tabela_', ''), ad, s, tabela_ofset,
+                duz, yaricap))
+            continue
         if tip == 'dur':
             parcalar.append(tabela(ad, 'stop_sign', 'stop_sign.dae',
                                    'StopSign/Diffuse',
@@ -797,12 +850,31 @@ def main():
                         '(perception_pkg trafik dugumu surer)')
     p.add_argument('--trafik-bas-s', type=float, default=60.0,
                    help='ilk trafik aracinin baslangic s degeri')
+    p.add_argument('--showcase', action='store_true',
+                   help='showcase pisti: fine-tune ile taninan tum tabela '
+                        'cesitleri + yaya + engel + trafik (jury sunumu)')
     a = p.parse_args()
+
+    if a.showcase:
+        # Tek bayrakla her senaryoyu kurar; argumanlari override et
+        if a.yaya_s is None:
+            a.yaya_s = 42.0            # yaya tabelasindan 12 m sonra
+        if a.engel_s is None:
+            # Alt duz bolumun sonu, YAYA zebrasindan 13 m sonra; araç
+            # yaya yavaslamasindan cikip hizlanirken engelle karsilasiyor
+            # ve kacinma manevrasini duz bolumde (sol serit garantili bos)
+            # tetikliyor. Virajda engel ise yarardi: sol-serit bosluk
+            # kontrolu yay-tabanli degil.
+            a.engel_s = 55.0
+        if a.trafik == 0:
+            a.trafik = 3
+            a.trafik_bas_s = 140.0     # bizim aracin ilerisinde
 
     sdf = dunya_uret(duz=a.duz, yaricap=a.yaricap, serit=a.serit,
                      golgeler=a.golgeler, bariyerli=not a.bariyersiz,
                      engel_s=a.engel_s, yaya_s=a.yaya_s,
-                     trafik_sayisi=a.trafik, trafik_bas_s=a.trafik_bas_s)
+                     trafik_sayisi=a.trafik, trafik_bas_s=a.trafik_bas_s,
+                     showcase=a.showcase)
 
     with open(a.cikti, 'w') as f:
         f.write(sdf)

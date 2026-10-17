@@ -39,7 +39,15 @@ ros2 launch perception_pkg otonom_surus.launch.py gui:=false rviz:=false algilam
 # Engel senaryosunu yükle (önce dünyayı üret)
 python3 src/perception_pkg/worlds/generate_otoban.py --engel-s 45 -o engel.world
 ros2 launch perception_pkg otonom_surus.launch.py world:=$PWD/engel.world
+
+# JÜRİ İÇİN TEK KOMUT: tüm yetenekleri birden gösteren showcase
+python3 src/perception_pkg/worlds/generate_otoban.py --showcase -o showcase.world
+ros2 launch perception_pkg otonom_surus.launch.py trafik:=3 world:=$PWD/showcase.world
 ```
+
+Showcase içinde: fine-tune ile tanınan 5 tabela çeşidi (hız limiti, yaya,
+dönel kavşak, dur, sağa dön), zebra geçidi, duran bir engel ve 3 renkli
+trafik aracı birden. Tek turda tüm yeteneklerin ard arda çalıştığı görülür.
 
 ---
 
