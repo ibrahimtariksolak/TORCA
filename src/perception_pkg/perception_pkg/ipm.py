@@ -62,17 +62,27 @@ class IPM:
         self.H = self._homografi()
 
     # ---- temel izdusum ----
-    def zemin_to_piksel(self, X, Y):
-        """Zemin noktasi (X ileri, Y sola) -> goruntu pikseli (u, v)."""
+    def nokta_to_piksel(self, X, Y, Z=0.0):
+        """3B arac cercevesi noktasi (X ileri, Y sola, Z yukari) -> piksel.
+
+        zemin_to_piksel'in genellestirilmisi: zemin Z=0, havadaki (ornek
+        tabela) noktalar icin Z>0. Kamera yerden h yuksekte oldugundan
+        noktanin kameraya gore dusey ofseti (h - Z).
+        """
         dx = X - self.x_cam
         ct, st = math.cos(self.t), math.sin(self.t)
+        dz = self.h - Z
         a = -Y
-        b = -dx * st + self.h * ct
-        c = dx * ct + self.h * st
-        if c <= 1e-6:                       # kameranin arkasi
+        b = -dx * st + dz * ct
+        c = dx * ct + dz * st
+        if c <= 1e-6:                       # kameranin arkasi/duzleminde
             return None
         return (self.cx + self.fx * a / c,
                 self.cy + self.fy * b / c)
+
+    def zemin_to_piksel(self, X, Y):
+        """Zemin noktasi (X ileri, Y sola) -> goruntu pikseli (u, v)."""
+        return self.nokta_to_piksel(X, Y, 0.0)
 
     def piksel_to_zemin(self, u, v):
         """Goruntu pikseli -> zemin noktasi. Ufuk ustu icin None."""

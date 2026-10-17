@@ -35,7 +35,13 @@ class SignDetector(Node):
         super().__init__('sign_detector')
 
         pkg_share = get_package_share_directory('perception_pkg')
-        varsayilan_model = os.path.join(pkg_share, 'weights', 'best.pt')
+        # Fine-tune edilmis model varsa onu kullan (bkz. tools/model_egit.py).
+        # Baseline best.pt sentetik Gazebo tabelalarini tanimiyordu (mAP50
+        # %2.25). Fine-tune ile %48'e cikti; sign_detector artik Stop'tan
+        # fazlasini goruyor.
+        ft = os.path.join(pkg_share, 'weights', 'best_finetuned.pt')
+        base = os.path.join(pkg_share, 'weights', 'best.pt')
+        varsayilan_model = ft if os.path.isfile(ft) else base
 
         self.declare_parameter('model_yolu', varsayilan_model)
         self.declare_parameter('guven_esigi', 0.60)
@@ -46,11 +52,12 @@ class SignDetector(Node):
         # Stop_Sign tespitlerinin bbox yuksekligi 47.6-106.9 px, uzaktaki
         # yanlis pozitifler ise <=33.7 px. 35 px ikisini temiz ayiriyor.
         self.declare_parameter('min_bbox_yukseklik', 35)
+        # Fine-tune ile taninan siniflar; eski modelin bilmedigi sinifi
+        # su an listede olsa bile bosa gider ama zarar vermez.
         self.declare_parameter('ilgili_siniflar', [
             'Stop_Sign', 'No Entry', 'Give Way', 'Pedestrian Crossing',
             'Speed Limit 20 KMPh', 'Speed Limit 30 KMPh',
-            'Dangerous Left Curve Ahead', 'Dangerous Rright Curve Ahead',
-            'Round-About',
+            'Round-About', 'Turn left ahead', 'Turn right ahead',
         ])
         self.declare_parameter('annotated_yayinla', True)
 
@@ -58,9 +65,12 @@ class SignDetector(Node):
         model_yolu = g('model_yolu').value
         if not os.path.isfile(model_yolu):
             # kaynak agacindan calistirilma durumu
-            yedek = os.path.join(os.path.dirname(__file__), 'weights', 'best.pt')
-            if os.path.isfile(yedek):
-                model_yolu = yedek
+            kaynak = os.path.join(os.path.dirname(__file__), 'weights')
+            for ad in ('best_finetuned.pt', 'best.pt'):
+                yedek = os.path.join(kaynak, ad)
+                if os.path.isfile(yedek):
+                    model_yolu = yedek
+                    break
             else:
                 raise FileNotFoundError(
                     f'YOLO agirligi bulunamadi: {model_yolu}')

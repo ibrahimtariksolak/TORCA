@@ -4,3 +4,8 @@ log/
 
 # TAROS kendi deposunda versiyonlanir: github.com/ibrahimtariksolak/TAROS
 src/TAROS/
+
+# YOLO egitim artifactleri (yerel calisma)
+runs/
+yolo*n.pt
+yolov*.pt
