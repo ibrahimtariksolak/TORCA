@@ -9,3 +9,7 @@ src/TAROS/
 runs/
 yolo*n.pt
 yolov*.pt
+
+# generate_otoban.py uretimi (her build'de yeniden olusturulur)
+otoban.world
+showcase.world
