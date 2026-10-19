@@ -154,6 +154,8 @@ class SeritTakip(Node):
     SAGDON_DUZ_SURE = 2.0      # fazlar arasi duz gidis suresi (s)
     SAGDON_YAW_TOL = 0.08      # hedef yaw'a yaklasim toleransi (rad, ~5°)
     SAGDON_FAZ_MAKS = 10.0     # tek fazin azami suresi (fallback / takilma)
+    SAGDON_DONUS_DIR = 0.25    # yola donus: hafif sol direksiyon (rad)
+    SAGDON_DONUS_MAKS = 8.0    # yola donus maks suresi (s)
 
     # ================= yardimcilar =================
     def _simdi(self):
@@ -184,13 +186,15 @@ class SeritTakip(Node):
     def _sagdon_tick(self):
         """Sagdon manevrasinin bir adimini uretir -> (hiz, direksiyon).
 
-        Fazlar (hep sag direksiyon):
-            1: 90° sag  -> hedef = baslangic - 90°
-            2: 2 s duz
-            3: 180° sag -> hedef = fazbasi - 180°
-            4: 2 s duz
-            5: 90° sag  -> hedef = fazbasi - 90°
-            6: bitti, serit takibine don
+        Fazlar:
+            1: yavasla — SAGDON_HIZ'a dusene kadar duz git
+            2: 90° sag  -> hedef = baslangic - 90°
+            3: 2 s duz
+            4: 180° sag -> hedef = fazbasi - 180°
+            5: 2 s duz
+            6: 90° sag  -> hedef = fazbasi - 90°
+            7: yola donus — hafif sol kir, serit bulununca veya sure dolunca bit
+            8: bitti, serit takibine don
 
         Her donus fazi hedef yaw'a tolerans icinde yaklasana kadar
         suruyor, SAGDON_FAZ_MAKS sinirini asarsa fallback olarak faz
@@ -199,7 +203,17 @@ class SeritTakip(Node):
         simdi = self._simdi()
         gecen = simdi - self.sagdon_faz_bas
 
-        if self.sagdon_faz in (1, 3, 5):
+        # Faz 1: yavasla
+        if self.sagdon_faz == 1:
+            if self.arac_hiz <= self.SAGDON_HIZ + 0.3 or gecen > 4.0:
+                self.sagdon_faz = 2
+                self.sagdon_faz_bas = simdi
+                self.sagdon_hedef_yaw = self._yaw_mod(
+                    self.arac_yaw - math.pi / 2.0)
+                return self._sagdon_tick()
+            return self.SAGDON_HIZ, 0.0
+
+        if self.sagdon_faz in (2, 4, 6):
             # Donus fazi
             yaw_fark = abs(self._yaw_mod(
                 self.arac_yaw - self.sagdon_hedef_yaw))
@@ -209,22 +223,27 @@ class SeritTakip(Node):
                 return self._sagdon_tick()
             return self.SAGDON_HIZ, self.SAGDON_DIR
 
-        if self.sagdon_faz in (2, 4):
+        if self.sagdon_faz in (3, 5):
             # Duz git fazi
             if gecen >= self.SAGDON_DUZ_SURE:
                 self.sagdon_faz += 1
                 self.sagdon_faz_bas = simdi
-                # Bir sonraki donus fazi icin yeni hedef:
-                #   faz 3 -> 180° (toplam -270° orijinalden)
-                #   faz 5 ->  90° (toplam -360° orijinalden)
-                donus = (math.pi if self.sagdon_faz == 3
+                donus = (math.pi if self.sagdon_faz == 4
                          else math.pi / 2.0)
                 self.sagdon_hedef_yaw = self._yaw_mod(
                     self.arac_yaw - donus)
                 return self._sagdon_tick()
             return self.SAGDON_HIZ, 0.0
 
-        # Faz 6: manevra tamam
+        # Faz 7: yola donus — hafif sol kirilarak yola yaklas
+        if self.sagdon_faz == 7:
+            if gecen > self.SAGDON_DONUS_MAKS:
+                self.sagdon_faz = 8
+                self.sagdon_faz_bas = simdi
+                return self._sagdon_tick()
+            return self.SAGDON_HIZ, self.SAGDON_DONUS_DIR
+
+        # Faz 8: manevra tamam
         self.sagdon_faz = 0
         self.get_logger().info('SAGA DON manevra tamam, serit takibine don')
         return None
@@ -276,19 +295,15 @@ class SeritTakip(Node):
         elif 'Speed Limit 20' in d and self._tetiklenebilir('hiz20'):
             self.hiz_limiti = 2.5
             self.get_logger().info('HIZ 20')
-        elif ('Turn right ahead' in d
+        elif (('Turn right ahead' in d or 'Turn left ahead' in d)
               and self._tetiklenebilir('sagdon')
               and self.sagdon_faz == 0):
             # Scripted 360° U-donusu baslat: 90° sag + duz + 180° sag +
             # duz + 90° sag -> arac orijinal yonunde, ileride ana yola
             # yakin kalir. Mevcut yaw baslangic alinir.
             self.sagdon_faz = 1
-            self.sagdon_hedef_yaw = self._yaw_mod(
-                self.arac_yaw - math.pi / 2.0)
             self.sagdon_faz_bas = self._simdi()
-            self.get_logger().info(
-                f'SAGA DON manevra basladi, hedef yaw '
-                f'{math.degrees(self.sagdon_hedef_yaw):.0f}°')
+            self.get_logger().info('SAGA DON manevra basladi, yavaslaniyor')
         elif 'Speed Limit 30' in d and self._tetiklenebilir('hiz30'):
             self.hiz_limiti = self.hiz_duz
             self.get_logger().info('HIZ 30')
@@ -517,16 +532,38 @@ class SeritTakip(Node):
 
         # ---- sagdon manevrasi aktifse: scripted U-donusu ----
         if self.sagdon_faz > 0:
-            tick = self._sagdon_tick()
-            if tick is not None:
-                twist.linear.x = float(tick[0])
-                twist.angular.z = float(tick[1])
-                self.cmd_pub.publish(twist)
-                self._debug(kare, None, None, None, None,
-                            f'SAGDON faz={self.sagdon_faz} '
-                            f'yaw={math.degrees(self.arac_yaw):.0f}°')
-                return
-            # tick None -> manevra bitti, serit takibine devam et
+            # Faz 7'de (yola donus) serit bulunursa manevravi bitir
+            if self.sagdon_faz == 7:
+                beyaz_t, sari_t = self._maskeler(kare)
+                kb_b = self.ipm.cevir(beyaz_t)
+                kb_s = self.ipm.cevir(sari_t)
+                merkez_t, _, _ = self._serit_merkezi(kb_b, kb_s)
+                if len(merkez_t) >= 6:
+                    self.sagdon_faz = 0
+                    self.get_logger().info(
+                        'SAGA DON: serit bulundu, normal takibe donus')
+                    # normal lane following devam edecek asagida
+                else:
+                    tick = self._sagdon_tick()
+                    if tick is not None:
+                        twist.linear.x = float(tick[0])
+                        twist.angular.z = float(tick[1])
+                    self.cmd_pub.publish(twist)
+                    self._debug(kare, kb_b, kb_s, None, None,
+                                f'SAGDON donus faz=7 '
+                                f'yaw={math.degrees(self.arac_yaw):.0f}°')
+                    return
+            else:
+                tick = self._sagdon_tick()
+                if tick is not None:
+                    twist.linear.x = float(tick[0])
+                    twist.angular.z = float(tick[1])
+                    self.cmd_pub.publish(twist)
+                    self._debug(kare, None, None, None, None,
+                                f'SAGDON faz={self.sagdon_faz} '
+                                f'yaw={math.degrees(self.arac_yaw):.0f}°')
+                    return
+                # tick None -> manevra bitti, serit takibine devam et
 
         beyaz, sari = self._maskeler(kare)
         kb_beyaz = self.ipm.cevir(beyaz)
@@ -555,7 +592,11 @@ class SeritTakip(Node):
         # ---- serit kaybi ----
         if len(merkez) < 4:
             self.kayip_sayac += 1
-            if self.kayip_sayac >= self.KAYIP_DUR:
+            if self.kacinma_ofset > 0.1:
+                twist.linear.x = self.hiz_viraj * 0.6
+                twist.angular.z = 0.0
+                durum = f'SERIT YOK - KACINMA ({self.kayip_sayac})'
+            elif self.kayip_sayac >= self.KAYIP_DUR:
                 twist.linear.x = 0.0
                 durum = 'SERIT YOK - DURDU'
             else:

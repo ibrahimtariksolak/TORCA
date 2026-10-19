@@ -293,8 +293,13 @@ def yol_yuzeyi(ad, duz, yaricap, yarim_genislik, adim=YOL_ADIM, z=YOL_Z):
 
 
 def bariyer(ad, ofset, duz, yaricap, adim=BARIYER_ADIM,
-            yukseklik=BARIYER_YUKSEK, kalinlik=BARIYER_KALIN):
-    """Yol kenari bariyeri -- visual + collision (araci pistte tutar)."""
+            yukseklik=BARIYER_YUKSEK, kalinlik=BARIYER_KALIN,
+            bosluk_kutu=None):
+    """Yol kenari bariyeri -- visual + collision (araci pistte tutar).
+
+    bosluk_kutu: opsiyonel (x_min, x_max, y_min, y_max); bu dikdortgen
+    icine dusen segmentler atlanir (detour cikisi icin).
+    """
     toplam = ofset_hat_uzunluk(ofset, duz, yaricap)
     n = max(1, int(round(toplam / adim)))
     ds = toplam / n
@@ -305,6 +310,10 @@ def bariyer(ad, ofset, duz, yaricap, adim=BARIYER_ADIM,
     for i in range(n):
         t = (i + 0.5) * ds
         x, y, teta = ofset_hat_nokta(t, ofset, duz, yaricap)
+        if bosluk_kutu is not None:
+            bx0, bx1, by0, by1 = bosluk_kutu
+            if bx0 <= x <= bx1 and by0 <= y <= by1:
+                continue
         poz = (x, y, z, teta)
         boyut = (boy, kalinlik, yukseklik)
         vis.append(visual(f'v{i}', poz, boyut, BARIYER_MAT))
@@ -410,6 +419,38 @@ def engel(ad, s, ofset, duz, yaricap,
           </material>
         </visual>
       </link>
+    </model>
+"""
+
+
+def detour_yol(ad, s_merkez, uzunluk, genislik, duz, yaricap,
+               serit_gen, adim=2.0, z=YOL_Z):
+    """Pistin sag kenarından dışarı uzanan asfalt yamasi (detour alani).
+
+    Saga don manevrasi sirasinda aracin cim yerine asfaltta donmesini
+    saglar. Yol boyunca `uzunluk` m, yol kenarından dışarı `genislik` m
+    kaplar. Karolar bindirmeli yerlestirilir (asfalt doku tekrari).
+    """
+    yarim_yol = serit_gen + YOL_PAYI
+    s_bas = s_merkez - uzunluk / 2.0
+    n_boy = int(math.ceil(uzunluk / adim))
+    n_en = int(math.ceil(genislik / adim))
+
+    parcalar = []
+    for i in range(n_boy):
+        s = s_bas + (i + 0.5) * adim
+        for j in range(n_en):
+            ofset = -(yarim_yol + (j + 0.5) * adim)
+            x, y, teta = ofset_nokta(s, ofset, duz, yaricap)
+            parcalar.append(visual(
+                f'd{i}_{j}', (x, y, z, teta),
+                (adim * 1.06, adim * 1.06, 0.01), ASFALT))
+
+    return f"""    <model name='{ad}'>
+      <static>1</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name='link'>
+{''.join(parcalar)}      </link>
     </model>
 """
 
@@ -575,9 +616,24 @@ def dunya_uret(duz=DUZ_UZUNLUK, yaricap=VIRAJ_YARICAP,
                                 SARI, duz, yaricap))
 
     # --- bariyerler (asfalt payinin hemen disinda)
+    # Showcase'de sagdon manevra alaninda dis bariyerde bosluk birak
+    dis_bosluk = None
+    if showcase and bariyerli:
+        vb = math.pi * yaricap
+        s_sagdon = 2 * duz + vb - 15.0
+        s_det = s_sagdon - 5.0
+        det_uzunluk = 30.0
+        det_genislik = 12.0
+        yl = duz / 2.0
+        x_max = yl - (s_det - det_uzunluk / 2 - duz - vb)
+        x_min = yl - (s_det + det_uzunluk / 2 - duz - vb)
+        dis_bosluk = (x_min - 2, x_max + 2,
+                      yaricap + yarim_yol - 1, yaricap + yarim_yol + 14)
+        parcalar.append(detour_yol('detour_yol', s_det, det_uzunluk,
+                                   det_genislik, duz, yaricap, serit))
     if bariyerli:
         parcalar.append(bariyer('dis_bariyer', -(yarim_yol + 0.5),
-                                duz, yaricap))
+                                duz, yaricap, bosluk_kutu=dis_bosluk))
         parcalar.append(bariyer('ic_bariyer', +(yarim_yol + 0.5),
                                 duz, yaricap))
 
@@ -860,15 +916,13 @@ def main():
         if a.yaya_s is None:
             a.yaya_s = 42.0            # yaya tabelasindan 12 m sonra
         if a.engel_s is None:
-            # Alt duz bolumun sonu, YAYA zebrasindan 13 m sonra; araç
-            # yaya yavaslamasindan cikip hizlanirken engelle karsilasiyor
-            # ve kacinma manevrasini duz bolumde (sol serit garantili bos)
-            # tetikliyor. Virajda engel ise yarardi: sol-serit bosluk
-            # kontrolu yay-tabanli degil.
-            a.engel_s = 55.0
+            # Ust duzun ortasi: virajdan yeterince uzak, kacinma
+            # manevrasi tamamen duz bolumde tamamlaniyor ve serit
+            # takibi viraj girisinden once toparlanabiliyor.
+            a.engel_s = 170.0
         if a.trafik == 0:
             a.trafik = 3
-            a.trafik_bas_s = 140.0     # bizim aracin ilerisinde
+            a.trafik_bas_s = 180.0     # ust duzde; 160'ta 3. arac viraj girisine dusuyordu
 
     sdf = dunya_uret(duz=a.duz, yaricap=a.yaricap, serit=a.serit,
                      golgeler=a.golgeler, bariyerli=not a.bariyersiz,

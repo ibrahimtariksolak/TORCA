@@ -35,7 +35,7 @@ sign_detector:
   ros__parameters:
     # Model yolu bos birakilirsa ament_index/share/perception_pkg/weights
     # altindan best.pt araniyor
-    guven_esigi: 0.60
+    guven_esigi: 0.40
     cikarim_hz: 6.0       # YOLO cikarim siklgi; kamera 30 Hz ama throttle
     imgsz: 640
     device: ''            # bos = otomatik (CUDA varsa kullanir)
