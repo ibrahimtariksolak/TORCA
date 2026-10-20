@@ -21,7 +21,13 @@
 ## Demo
 
 <p align="center">
-  <img src="docs/media/demo.gif" alt="TORCA showcase senaryosu — şerit takibi, tabela tanıma ve engel kaçınma" width="100%">
+  <img src="docs/media/demo_pist.gif" alt="Oval pist genel görünümü — araç şerit takibiyle tur atıyor, NPC trafik araçları dolaşıyor" width="100%">
+  <br><sub><i>Oval pist genel görünümü · şerit takibi ve NPC trafik akışı</i></sub>
+</p>
+
+<p align="center">
+  <img src="docs/media/demo.gif" alt="Araç görüşünden şerit takibi ve DUR tabelası tespiti" width="100%">
+  <br><sub><i>Araç görüşü · şerit takibi, canlı tabela tespiti ve DUR reaksiyonu</i></sub>
 </p>
 
 <p align="center">
