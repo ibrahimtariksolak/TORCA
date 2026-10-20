@@ -1,8 +1,34 @@
-# ROS 2 Otonom Araç Algılama ve Kontrol
+# TORCA — Traffic-aware Obstacle Routing & Cognitive Autonomy
 
-Gazebo'da simüle edilen otonom bir araç için ROS 2 (Humble) algılama + kontrol yığını:
-Ackermann direksiyonlu gerçek ölçekli araç, kamera tabanlı şerit takibi (HSV + kuş
-bakışı + saf takip), YOLOv8 ile trafik tabelası tanıma ve LiDAR tabanlı acil fren.
+ROS 2 (Humble) tabanlı otonom araç algılama ve kontrol yığını. Gazebo Classic 11
+simülasyonunda gerçek ölçekli Ackermann direksiyonlu araç; kamera tabanlı şerit
+takibi (HSV + IPM + saf takip), YOLOv8 fine-tune ile trafik tabelası tanıma,
+LiDAR tabanlı engel kaçınma ve scripted U-dönüşü manevrası.
+
+---
+
+## Demo
+
+### Simülasyon — Showcase senaryosu (tüm yetenekler ard arda)
+
+<video src="docs/media/demo.mp4" controls width="100%"></video>
+
+> Tek turda: Hız Limiti → Yaya Geçidi → Dönel Kavşak → DUR → Sağa Dön (U-dönüşü) → Engel Kaçınma
+
+### Tabela tanıma — Gerçek dünya testi
+
+![Gerçek dünya tabela tespiti](docs/media/gercek_dunya_tespiti.jpg)
+
+Model gerçek trafik tabelası fotoğraflarını cep telefonu kamerasıyla canlı olarak
+tanıyor: Round-About 0.81, Give Way 0.87, Turn right ahead 0.75, No Entry 0.85,
+Turn left ahead 0.71 ve daha fazlası.
+
+### Simülasyon tespiti + sentetik eğitim verisi
+
+![Simülasyon tabela tespiti ve eğitim verisi](docs/media/simulasyon_tespiti.jpg)
+
+Sol: Gazebo sahnesinde Speed Limit / Pedestrian Crossing / Stop_Sign 0.97 tespiti.
+Sağ: Fine-tuning için otomatik etiketlenmiş sentetik Gazebo görüntüleri.
 
 ---
 
