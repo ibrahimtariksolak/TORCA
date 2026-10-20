@@ -10,6 +10,9 @@ runs/
 yolo*n.pt
 yolov*.pt
 
-# generate_otoban.py uretimi (her build'de yeniden olusturulur)
-otoban.world
+# generate_otoban.py uretimi. worlds/otoban.world BILEREK takip ediliyor:
+# launch dosyasinin varsayilan dunyasi o, temiz bir klonun build sonrasi
+# calisabilmesi icin depoda bulunmali. Senaryo dunyalari ise gecici.
 showcase.world
+engel.world
+/otoban.world

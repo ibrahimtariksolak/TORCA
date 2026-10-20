@@ -339,7 +339,9 @@ src/perception_pkg/
 > **Dünya dosyaları elle düzenlenmez.** Gazebo GUI'den "Save World" bir
 > `<state>` bloğu yazıp model pozlarını sessizce ezer. Pisti değiştirmek
 > için `generate_otoban.py`'ı düzenleyip yeniden çalıştırın.
-> `otoban.world` ve `showcase.world` bu yüzden `.gitignore`'dadır.
+> `worlds/otoban.world` depoda tutulur — launch'ın varsayılan dünyası odur
+> ve temiz bir klonun kutudan çıktığı gibi çalışması gerekir. Senaryo
+> dünyaları (`showcase.world`, `engel.world`) geçicidir ve `.gitignore`'dadır.
 
 ---
 

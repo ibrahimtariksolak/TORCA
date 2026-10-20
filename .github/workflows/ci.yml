@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# En az ayricalik: is akisi yalnizca kodu okur, hicbir sey yazmaz.
+permissions:
+  contents: read
+
 jobs:
   lint-ve-test:
     runs-on: ubuntu-latest
